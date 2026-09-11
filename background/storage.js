@@ -29,6 +29,7 @@ export const EMPTY_PROFILE = {
   lastName: '',
   phone: '',
   address1: '',
+  address2: '', // apt / unit — Workday renders it as a separate line
   city: '',
   state: '',
   zip: '',

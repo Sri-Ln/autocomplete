@@ -40,6 +40,7 @@
       "js": [
         "content/00-namespace.js",
         "content/react-set.js",
+        "content/match.js",
         "content/filler.js",
         "content/guards.js",
         "sites/workday.js",
