@@ -1,0 +1,390 @@
+/* popup.css — dark, compact, functional. Matches the in-page widget. */
+
+/* ── THE FIX FOR "EVERY VIEW RENDERS AT ONCE" ────────────────────────
+ * `hidden` is only a UA-stylesheet `display: none`, so ANY explicit display
+ * later in the cascade silently defeats it. `section { display: flex }` and
+ * `.panel { display: flex }` were doing exactly that, which is why all three
+ * views — and all three tab panels — were visible simultaneously.
+ * This rule must come first and must be !important. */
+[hidden] {
+  display: none !important;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+:root {
+  --bg: #16161d;
+  --bg-raised: #1d1d26;
+  --bg-sunken: #0f0f15;
+  --line: #2c2c38;
+  --line-bright: #44445a;
+  --text: #e8e8ee;
+  --text-dim: #a9a9bb;
+  --text-faint: #7a7a8c;
+  --accent: #7c5cff;
+  --accent-hover: #6a48f5;
+  --danger: #ef7d7d;
+  --radius: 10px;
+}
+
+html,
+body {
+  background: var(--bg);
+}
+
+body {
+  width: 330px;
+  margin: 0;
+  padding: 0 0 14px;
+  color: var(--text);
+  font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+/* ── header ── */
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--bg-raised);
+  border-bottom: 1px solid var(--line);
+}
+.logo {
+  border-radius: 6px;
+  flex: none;
+  display: block;
+}
+.brand {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+.brand .name {
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+.brand .sub {
+  font-size: 10.5px;
+  color: var(--text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── layout ── */
+
+section {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  padding: 14px;
+}
+
+.card {
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px;
+}
+.card h2 {
+  margin: 0 0 5px;
+  font-size: 12.5px;
+  font-weight: 650;
+}
+.card p {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--text-dim);
+}
+
+.fine {
+  margin: 0;
+  color: var(--text-faint);
+  font-size: 11px;
+  line-height: 1.55;
+}
+.fine b {
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 3px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+}
+.divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+.divider.danger-label {
+  color: #8c5a5a;
+}
+
+/* ── form controls ── */
+
+label {
+  display: block;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+input[type="text"],
+input[type="email"],
+input[type="tel"],
+input[type="password"] {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--bg-sunken);
+  border: 1px solid var(--line);
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+}
+input::placeholder {
+  color: #55556a;
+}
+input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(124, 92, 255, 0.15);
+}
+
+label.row {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 9px 11px;
+  border-radius: 9px;
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+}
+label.row:hover {
+  border-color: var(--line-bright);
+}
+label.row input[type="checkbox"] {
+  width: auto;
+  margin: 2px 0 0;
+  accent-color: var(--accent);
+  flex: none;
+}
+label.row small {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-faint);
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+
+.grid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+}
+
+/* ── buttons ── */
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+button.primary {
+  width: 100%;
+  padding: 9px 12px;
+  border: none;
+  border-radius: 9px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  font-size: 13px;
+}
+button.primary:hover {
+  background: var(--accent-hover);
+}
+button.primary:active {
+  transform: translateY(1px);
+}
+button.primary.big {
+  padding: 11px 12px;
+  font-size: 13.5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+.bolt {
+  font-size: 13px;
+  line-height: 1;
+}
+
+button.ghost {
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 11px;
+  flex: none;
+}
+button.ghost:hover {
+  color: var(--text);
+  border-color: var(--line-bright);
+}
+
+button.danger {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #4a2222;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--danger);
+  font-size: 12px;
+}
+button.danger:hover {
+  background: #2b1717;
+}
+
+/* ── tabs ── */
+
+.tabs {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  background: var(--bg-sunken);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+.tab {
+  flex: 1;
+  padding: 6px 4px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 11.5px;
+  font-weight: 550;
+}
+.tab:hover {
+  color: var(--text-dim);
+}
+.tab.active {
+  color: var(--text);
+  background: var(--accent);
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+
+/* ── saved credential list ── */
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.list .item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  font-size: 11.5px;
+}
+.list .item .who {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.35;
+}
+.list .item .who .scope {
+  color: var(--text);
+  font-weight: 550;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.list .item .who .email {
+  color: var(--text-faint);
+  font-size: 10.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.list .item .tag {
+  flex: none;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: rgba(124, 92, 255, 0.16);
+  color: #a78bff;
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+}
+.list .item button {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 15px;
+  line-height: 1;
+}
+.list .item button:hover {
+  color: var(--danger);
+  background: #2b1717;
+}
+
+/* ── toast ── */
+
+.toast {
+  position: fixed;
+  left: 14px;
+  right: 14px;
+  bottom: 14px;
+  padding: 9px 12px;
+  border-radius: 9px;
+  font-size: 11.5px;
+  background: #1d2430;
+  color: #9fc2e8;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+}
+.toast.ok {
+  background: #16281f;
+  color: #7fd6a6;
+}
+.toast.err {
+  background: #2b1717;
+  color: #f09a9a;
+}

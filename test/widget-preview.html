@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Widget preview</title>
+    <style>
+      body {
+        margin: 0; padding: 28px; min-height: 100vh;
+        background: #0b0b10; color: #e8e8ee;
+        font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      }
+      h1 { font-size: 15px; margin: 0 0 6px; }
+      p { color: #8a8a9c; font-size: 12.5px; margin: 0 0 18px; max-width: 62ch; }
+      .states { display: flex; flex-wrap: wrap; gap: 8px; }
+      button {
+        padding: 7px 12px; border-radius: 8px; border: 1px solid #2c2c38;
+        background: #1d1d26; color: #c9c9d8; font-size: 12px; cursor: pointer;
+        font-family: inherit;
+      }
+      button:hover { border-color: #44445a; color: #fff; }
+      /* A ruler so overflow past the panel edge is obvious. */
+      #ruler {
+        position: fixed; right: 18px; bottom: 18px; width: 288px; height: 1px;
+        background: repeating-linear-gradient(90deg,#ef5f5f 0 6px,transparent 6px 12px);
+        z-index: 2147483646; pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Floating widget preview</h1>
+    <p>
+      Renders the real <code>content/widget.js</code> in every state. The dashed red
+      line marks the panel's 288px width — anything crossing it is overflowing.
+      Used to verify the <code>all: unset</code> / <code>box-sizing</code> fix.
+    </p>
+    <div class="states" id="states"></div>
+    <div id="ruler"></div>
+
+    <script src="../content/00-namespace.js"></script>
+    <script src="../content/widget.js"></script>
+    <script>
+      AF.widget.mount({ onAction: (p) => console.log('action, passphrase:', p) });
+
+      const STATES = {
+        'ready': {
+          context: '<b>Workday</b> · Create Account',
+          actionLabel: 'Fill & Submit',
+        },
+        'locked': {
+          context: '<b>Workday</b> · Create Account',
+          tone: 'warn',
+          needsPass: true,
+          actionLabel: 'Unlock & Fill',
+        },
+        'working': {
+          context: '<b>Workday</b> · Create Account',
+          actionLabel: 'Working…',
+          disabled: true,
+        },
+        'submitted': {
+          context: '<b>Workday</b> · Create Account',
+          tone: 'ok',
+          actionLabel: 'Fill & Submit',
+          message: { kind: 'ok', text: 'Submitted — waiting for the next step…' },
+        },
+        'blocked (long)': {
+          context: '<b>Workday</b> · Create Account',
+          tone: 'err',
+          actionLabel: 'Fill & Submit',
+          message: {
+            kind: 'warn',
+            text: 'Not submitting — unmapped required field(s) still empty: legalNameSection_firstName, addressSection_postalCode. Harvest their data-automation-id and add them to sites/workday.js.',
+          },
+        },
+        'not set up': {
+          context: '<b>Workday</b> · no recognised form on this page',
+          tone: 'warn',
+          actionLabel: null,
+          message: {
+            kind: 'warn',
+            text: 'Not set up yet. Open the extension popup to create your passphrase and save your login.',
+          },
+        },
+        'locked + error': {
+          context: '<b>Workday</b> · Sign In',
+          tone: 'err',
+          needsPass: true,
+          actionLabel: 'Unlock & Fill',
+          message: { kind: 'err', text: 'Wrong passphrase.' },
+        },
+      };
+
+      const host = document.getElementById('states');
+      for (const [name, state] of Object.entries(STATES)) {
+        const b = document.createElement('button');
+        b.textContent = name;
+        b.addEventListener('click', () => AF.widget.render(state));
+        host.append(b);
+      }
+
+      AF.widget.render(STATES['ready']);
+      window.__setState = (n) => AF.widget.render(STATES[n]);
+    </script>
+  </body>
+</html>

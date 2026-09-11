@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Autocomplete — React setter harness</title>
+    <style>
+      body {
+        margin: 0; padding: 28px;
+        background: #16161d; color: #e8e8ee;
+        font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      }
+      h1 { font-size: 16px; margin: 0 0 4px; }
+      p.lede { color: #8a8a9c; font-size: 13px; margin: 0 0 22px; max-width: 60ch; }
+      .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; max-width: 780px; }
+      fieldset { border: 1px solid #2c2c38; border-radius: 10px; padding: 14px; margin: 0; }
+      legend { color: #8a8a9c; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; padding: 0 6px; }
+      label { display: block; font-size: 11px; color: #8a8a9c; margin-bottom: 9px; }
+      input[type="text"], input[type="email"], input[type="password"] {
+        display: block; width: 100%; margin-top: 3px; padding: 7px 9px;
+        border-radius: 7px; background: #0f0f15; border: 1px solid #2c2c38;
+        color: #e8e8ee; font-size: 13px; font-family: inherit;
+      }
+      label.row { display: flex; gap: 8px; align-items: center; color: #c9c9d8; font-size: 13px; }
+      label.row input { width: auto; margin: 0; }
+      pre {
+        background: #0f0f15; border: 1px solid #2c2c38; border-radius: 8px;
+        padding: 11px; font-size: 12px; color: #9fc2e8; margin: 0; overflow: auto;
+      }
+      .btns { display: flex; gap: 9px; margin: 22px 0 14px; flex-wrap: wrap; }
+      button {
+        padding: 8px 14px; border-radius: 8px; border: none; cursor: pointer;
+        font-size: 13px; font-weight: 600; font-family: inherit;
+      }
+      button.good { background: #7c5cff; color: #fff; }
+      button.bad  { background: #34343f; color: #c9c9d8; }
+      button.reset { background: transparent; color: #7a7a8c; border: 1px solid #2c2c38; }
+      #verdict { margin-top: 14px; padding: 11px 13px; border-radius: 8px; font-size: 13px; max-width: 780px; }
+      .pass { background: #16281f; color: #7fd6a6; }
+      .fail { background: #2b1717; color: #f09a9a; }
+      code { background: #22222c; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <h1>React setter harness</h1>
+    <p class="lede">
+      A genuinely React-controlled form, standing in for Workday. Use it to prove
+      <code>AF.setNativeValue</code> actually drives React state before you point the
+      extension at a real signup page. The right-hand panel is React's own state —
+      if it stays empty while the inputs look full, the write did not register.
+    </p>
+
+    <div id="root"></div>
+
+    <!-- React 18, UMD, pinned. Loads fine over file:// -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+
+    <!-- The real files, not a copy. If these pass here, they work on Workday. -->
+    <script src="../content/00-namespace.js"></script>
+    <script src="../content/react-set.js"></script>
+
+    <script>
+      const { useState, createElement: h } = React;
+
+      function Field({ id, label, type, value, onChange }) {
+        return h('label', null,
+          label,
+          h('input', {
+            type,
+            'data-automation-id': id,
+            value,
+            onChange: (e) => onChange(e.target.value),
+          })
+        );
+      }
+
+      function Form() {
+        const [state, setState] = useState({
+          email: '', password: '', verify: '', agree: false,
+        });
+        const set = (k) => (v) => setState((s) => ({ ...s, [k]: v }));
+
+        window.__reactState = state; // read by the verdict check below
+
+        return h('div', { className: 'cols' },
+          h('fieldset', null,
+            h('legend', null, 'React-controlled form'),
+            h(Field, { id: 'harness_email', label: 'Email', type: 'email',
+                       value: state.email, onChange: set('email') }),
+            h(Field, { id: 'harness_password', label: 'Password', type: 'password',
+                       value: state.password, onChange: set('password') }),
+            h(Field, { id: 'harness_verifyPassword', label: 'Verify password', type: 'password',
+                       value: state.verify, onChange: set('verify') }),
+            h('label', { className: 'row' },
+              h('input', {
+                type: 'checkbox',
+                'data-automation-id': 'harness_agreeCheckbox',
+                checked: state.agree,
+                onChange: (e) => set('agree')(e.target.checked),
+              }),
+              'I agree to the terms'
+            )
+          ),
+          h('fieldset', null,
+            h('legend', null, "React's internal state"),
+            h('pre', null, JSON.stringify(state, null, 2))
+          )
+        );
+      }
+
+      ReactDOM.createRoot(document.getElementById('root')).render(h(Form));
+
+      /* ---------------- test controls ---------------- */
+
+      const controls = document.createElement('div');
+      controls.className = 'btns';
+      controls.innerHTML = `
+        <button class="good" id="tGood">Fill with AF.setNativeValue</button>
+        <button class="bad"  id="tBad">Fill naively (el.value = …)</button>
+        <button class="reset" id="tReset">Reset</button>
+      `;
+      document.body.append(controls);
+
+      const verdict = document.createElement('div');
+      verdict.id = 'verdict';
+      document.body.append(verdict);
+
+      const SAMPLE = {
+        harness_email: 'test@example.com',
+        harness_password: 'hunter2hunter2',
+        harness_verifyPassword: 'hunter2hunter2',
+      };
+      const q = (id) => document.querySelector(`[data-automation-id="${id}"]`);
+
+      function check(method) {
+        const s = window.__reactState;
+        const ok =
+          s.email === SAMPLE.harness_email &&
+          s.password === SAMPLE.harness_password &&
+          s.verify === SAMPLE.harness_verifyPassword &&
+          s.agree === true;
+
+        verdict.className = ok ? 'pass' : 'fail';
+        verdict.textContent = ok
+          ? `PASS — ${method}: React state matches what we typed. This is what the extension needs.`
+          : `FAIL — ${method}: the inputs may look filled, but React state is ${JSON.stringify(s)}. A form submitted now would send empty values.`;
+      }
+
+      document.getElementById('tGood').addEventListener('click', () => {
+        for (const [id, value] of Object.entries(SAMPLE)) AF.setNativeValue(q(id), value);
+        AF.setNativeChecked(q('harness_agreeCheckbox'), true);
+        setTimeout(() => check('AF.setNativeValue'), 60);
+      });
+
+      document.getElementById('tBad').addEventListener('click', () => {
+        // The intuitive approach, here to demonstrate exactly why it fails.
+        for (const [id, value] of Object.entries(SAMPLE)) q(id).value = value;
+        q('harness_agreeCheckbox').checked = true;
+        setTimeout(() => check('naive el.value ='), 60);
+      });
+
+      document.getElementById('tReset').addEventListener('click', () => location.reload());
+    </script>
+  </body>
+</html>

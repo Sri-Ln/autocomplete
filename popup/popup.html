@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="popup.css" />
+    <title>Autocomplete</title>
+  </head>
+  <body>
+    <header>
+      <img class="logo" src="../icons/icon48.png" alt="" width="22" height="22" />
+      <div class="brand">
+        <span class="name">Autocomplete</span>
+        <span class="sub" id="headerSub">Job application autofill</span>
+      </div>
+      <button class="ghost" id="lockBtn" hidden>Lock</button>
+    </header>
+
+    <!-- ============ FIRST RUN ============ -->
+    <section id="setupView" hidden>
+      <div class="card intro">
+        <h2>Choose a passphrase</h2>
+        <p>
+          This encrypts the passwords you save here. It is never stored anywhere —
+          you type it once after each time you start Chrome, then one-click filling
+          works for the rest of the session.
+        </p>
+      </div>
+
+      <label>Passphrase<input type="password" id="setupPass" autocomplete="new-password" /></label>
+      <label>Confirm<input type="password" id="setupPass2" autocomplete="new-password" /></label>
+      <button class="primary" id="setupBtn">Create</button>
+      <p class="fine">
+        Forget it and you lose only the saved passwords — re-enter them and you're
+        back. Your profile details are untouched.
+      </p>
+    </section>
+
+    <!-- ============ LOCKED ============ -->
+    <section id="lockedView" hidden>
+      <div class="card intro">
+        <h2>Locked</h2>
+        <p>
+          Chrome was restarted, so the key is gone from memory. Enter your
+          passphrase to unlock for this session.
+        </p>
+      </div>
+
+      <label>Passphrase<input type="password" id="unlockPass" autocomplete="off" /></label>
+      <button class="primary" id="unlockBtn">Unlock</button>
+    </section>
+
+    <!-- ============ MAIN ============ -->
+    <section id="mainView" hidden>
+      <button class="primary big" id="fillBtn">
+        <span class="bolt">⚡</span> Fill this page
+      </button>
+
+      <nav class="tabs" role="tablist">
+        <button class="tab active" data-tab="login" role="tab">Login</button>
+        <button class="tab" data-tab="profile" role="tab">Profile</button>
+        <button class="tab" data-tab="settings" role="tab">Settings</button>
+      </nav>
+
+      <!-- ---- login ---- -->
+      <div class="panel" data-panel="login">
+        <p class="fine">
+          The default login is used on <b>every</b> Workday tenant, including ones
+          you've never visited. Add a host override only if one company forces a
+          different password.
+        </p>
+
+        <label>Email<input type="email" id="credEmail" autocomplete="off" /></label>
+        <label>
+          Password
+          <input type="password" id="credPass" autocomplete="off" placeholder="••••••••" />
+        </label>
+
+        <label class="row">
+          <input type="checkbox" id="credIsOverride" />
+          <span>Save for one host only</span>
+        </label>
+        <label id="overrideHostWrap" hidden>
+          Host<input type="text" id="credHost" placeholder="nvidia.wd5.myworkdayjobs.com" />
+        </label>
+
+        <button class="primary" id="saveCredBtn">Save login</button>
+
+        <div class="divider" id="credListLabel">Saved</div>
+        <div id="credList" class="list"></div>
+      </div>
+
+      <!-- ---- profile ---- -->
+      <div class="panel" data-panel="profile" hidden>
+        <p class="fine">
+          Used on application forms (My Information), not on the signup page. Your
+          email lives with the login, on the Login tab.
+        </p>
+        <div class="grid2">
+          <label>First name<input type="text" id="firstName" /></label>
+          <label>Last name<input type="text" id="lastName" /></label>
+        </div>
+        <label>Phone<input type="tel" id="phone" /></label>
+        <label>Address line 1<input type="text" id="address1" /></label>
+        <div class="grid2">
+          <label>City<input type="text" id="city" /></label>
+          <label>State<input type="text" id="state" /></label>
+        </div>
+        <div class="grid2">
+          <label>ZIP<input type="text" id="zip" /></label>
+          <label>Country<input type="text" id="country" /></label>
+        </div>
+        <button class="primary" id="saveProfileBtn">Save profile</button>
+      </div>
+
+      <!-- ---- settings ---- -->
+      <div class="panel" data-panel="settings" hidden>
+        <label class="row">
+          <input type="checkbox" id="autoSubmit" />
+          <span>
+            Submit automatically after filling
+            <small>Off = fill, then a second click submits.</small>
+          </span>
+        </label>
+
+        <label class="row">
+          <input type="checkbox" id="showWidget" />
+          <span>
+            Show the floating button on pages
+            <small>Off = fill only from this popup.</small>
+          </span>
+        </label>
+
+        <div class="divider">About the passphrase</div>
+        <p class="fine">
+          Saved passwords are encrypted with AES-GCM; the key is derived from your
+          passphrase and held in memory only, so it disappears when Chrome closes.
+          Your profile details are stored in plain text. CAPTCHAs and email
+          verification are never automated.
+        </p>
+
+        <div class="divider danger-label">Danger</div>
+        <button class="danger" id="wipeBtn">Erase everything</button>
+      </div>
+    </section>
+
+    <div id="toast" class="toast" hidden></div>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

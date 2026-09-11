@@ -1,0 +1,31 @@
+# ── Browser-automation artifacts ─────────────────────────────────────
+# Written by Playwright/MCP while verifying the UI against live pages.
+# Throwaway: console logs, accessibility snapshots, and screenshots.
+.playwright-mcp/
+widget-*.png
+popup-*.png
+page-*.png
+*-snapshot.yml
+
+# ── Packaged builds ──────────────────────────────────────────────────
+# chrome://extensions "Pack extension" output. The repo is the source of
+# truth; load it unpacked.
+*.crx
+*.pem
+*.zip
+
+# ── Not used by this project, but cheap insurance ────────────────────
+# There is no build step and no npm dependency. If either ever appears,
+# keep it out of the repo.
+node_modules/
+package-lock.json
+.env
+.env.*
+
+# ── Editors / OS ─────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini

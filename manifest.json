@@ -1,0 +1,53 @@
+{
+  "manifest_version": 3,
+  "name": "Autocomplete — Job Application Autofill",
+  "version": "0.1.0",
+  "description": "One-click autofill + submit for Workday account creation and application forms.",
+
+  "permissions": ["storage"],
+
+  "//host_permissions": "Needed so the popup can read tab.url (to prefill the override host) and message content scripts by URL. Keep this list in sync with content_scripts.matches below.",
+  "host_permissions": ["https://*.myworkdayjobs.com/*"],
+
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "Autocomplete",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png"
+    }
+  },
+
+  "background": {
+    "service_worker": "background/service-worker.js",
+    "type": "module"
+  },
+
+  "content_scripts": [
+    {
+      "//": "ADDING A NEW SITE: add its host pattern here, and add sites/<name>.js to both the js array below and to sites/index.js. Those are the only three edits.",
+      "matches": ["https://*.myworkdayjobs.com/*"],
+      "run_at": "document_idle",
+      "all_frames": false,
+      "js": [
+        "content/00-namespace.js",
+        "content/react-set.js",
+        "content/filler.js",
+        "content/guards.js",
+        "sites/workday.js",
+        "sites/index.js",
+        "content/registry.js",
+        "content/widget.js",
+        "content/main.js"
+      ]
+    }
+  ]
+}
