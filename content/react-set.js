@@ -58,7 +58,7 @@ function fire(el, type) {
  * Write a text value into a React-controlled input/textarea/select.
  * Returns true if the value stuck.
  */
-AF.setNativeValue = function (el, value) {
+AF.setNativeValue = function (el, value, { blur = true } = {}) {
   const setter = AF.nativeSetterFor(el, 'value');
   if (!setter) {
     AF.log('no native value setter for', el);
@@ -75,10 +75,16 @@ AF.setNativeValue = function (el, value) {
   fire(el, 'input');
   fire(el, 'change');
 
-  try {
-    el.blur();
-  } catch {
-    /* ignore */
+  /* blur:false is for typeahead widgets. Workday's multi-select opens its
+   * option list on focus and closes it on blur, so blurring here would shut
+   * the list we are about to read. Plain fields keep the default, because
+   * Workday validates them on blur. */
+  if (blur) {
+    try {
+      el.blur();
+    } catch {
+      /* ignore */
+    }
   }
 
   return el.value === value;

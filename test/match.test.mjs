@@ -118,5 +118,49 @@ check('returns null for a blank wanted', AF.bestMatch(['Indeed'], ['']), null);
 check('accepts {text} objects',
   AF.bestMatch([{ text: 'Indeed' }, { text: 'FINRA Career Site' }], finra)?.index, 1);
 
+/* ---------------- US states ----------------
+ * Regression: harvested from a real Workday state dropdown. The query "MA"
+ * prefix-matched Maine, Maryland AND Massachusetts; Maine sorts first, so a
+ * Massachusetts address silently became a Maine one. */
+
+const REAL_STATES = [
+  'Select One', 'Alabama', 'Alaska', 'American Samoa', 'Arizona', 'Arkansas',
+  'Armed Forces Americas', 'Armed Forces Europe', 'Armed Forces Pacific',
+  'California', 'Colorado', 'Connecticut', 'Delaware', 'District of Columbia',
+  'Florida', 'Georgia', 'Guam', 'Hawaii', 'Idaho', 'Illinois', 'Indiana', 'Iowa',
+  'Kansas', 'Kentucky', 'Louisiana', 'Maine', 'Maryland', 'Massachusetts',
+  'Michigan', 'Minnesota', 'Mississippi', 'Missouri', 'Montana', 'Nebraska',
+  'Nevada', 'New Hampshire', 'New Jersey', 'New Mexico', 'New York',
+  'North Carolina', 'North Dakota', 'Ohio', 'Oklahoma', 'Oregon', 'Pennsylvania',
+  'Rhode Island', 'South Carolina', 'South Dakota', 'Tennessee', 'Texas', 'Utah',
+  'Vermont', 'Virginia', 'Washington', 'West Virginia', 'Wisconsin', 'Wyoming',
+];
+
+check('MA expands to Massachusetts', AF.expandUsState('MA'), 'Massachusetts');
+check('lowercase ma expands too', AF.expandUsState('ma'), 'Massachusetts');
+check('full name passes through', AF.expandUsState('Massachusetts'), 'Massachusetts');
+check('unknown value passes through', AF.expandUsState('Ontario'), 'Ontario');
+check('empty stays empty', AF.expandUsState(''), '');
+
+check('expanded MA selects Massachusetts',
+  AF.bestMatch(REAL_STATES, [AF.expandUsState('MA')])?.text, 'Massachusetts');
+
+// The three-letter guard, proven directly.
+check('bare MA no longer matches Maine',
+  AF.bestMatch(REAL_STATES, ['MA']), null);
+check('short queries score zero unless exact',
+  AF.scoreMatch('Maine', 'MA'), 0);
+check('short query still matches itself exactly',
+  AF.scoreMatch('MA', 'ma'), 1);
+
+// Every abbreviation must round-trip against the real list.
+const missing = [];
+for (const [abbr, full] of Object.entries(AF.US_STATES)) {
+  if (!REAL_STATES.includes(full)) continue; // territory not in this trimmed list
+  const hit = AF.bestMatch(REAL_STATES, [AF.expandUsState(abbr)]);
+  if (hit?.text !== full) missing.push(`${abbr}→${hit?.text ?? 'null'} (want ${full})`);
+}
+check('every US abbreviation resolves correctly', missing, []);
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

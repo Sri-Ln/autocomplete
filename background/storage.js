@@ -29,11 +29,20 @@ export const EMPTY_PROFILE = {
   lastName: '',
   phone: '',
   address1: '',
-  address2: '', // apt / unit — Workday renders it as a separate line
+  address2: '', // apt / unit — not present on every tenant's form
   city: '',
-  state: '',
+  state: '',   // "MA" or "Massachusetts"; expanded before matching
   zip: '',
   country: '',
+
+  /* Answer to "How Did You Hear About Us?".
+   *
+   * Deliberately a free-text preference rather than something derived from the
+   * hostname. The hostname gives a tenant slug, and slugs do not match the
+   * wording in the dropdown: ghr.wd1.myworkdayjobs.com is Goldman Sachs, whose
+   * option is nothing like "ghr". The matcher scores this against whatever the
+   * dropdown actually offers, so "Career Site" finds "<Company> Career Site". */
+  source: 'Career Site',
 };
 
 export const DEFAULT_SETTINGS = {

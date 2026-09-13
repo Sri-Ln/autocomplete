@@ -39,6 +39,18 @@ AF.scoreMatch = function (option, wanted) {
   if (!o || !w) return 0;
 
   if (o === w) return 1;
+
+  /* Short queries must NOT prefix-match.
+   *
+   * Measured against a real Workday state list: the query "MA" prefix-matched
+   * "Maine", "Maryland" and "Massachusetts" equally, and "Maine" sorts first —
+   * so a Massachusetts address silently became a Maine one. Anything three
+   * characters or shorter is almost always an abbreviation, and an abbreviation
+   * that is not an exact hit is not evidence of anything.
+   *
+   * Expand abbreviations before calling this (see AF.expandUsState). */
+  if (w.length <= 3) return 0;
+
   if (o.startsWith(w) || w.startsWith(o)) return 0.92;
   if (o.includes(w)) return 0.86;
 
@@ -134,7 +146,7 @@ AF.careerSiteCandidates = function (hostname = location.hostname) {
 
 /**
  * Category names worth drilling into when the answer isn't at the top level.
- * Workday nests sources: "Job Sites" → "FINRA Career Site".
+ * Workday nests sources: "Job Sites" → "<Company> Career Site".
  */
 AF.SOURCE_CATEGORY_HINTS = [
   'job sites',
@@ -145,3 +157,40 @@ AF.SOURCE_CATEGORY_HINTS = [
   'online',
   'other',
 ];
+
+/* ------------------------------------------------------------------ */
+/* US states                                                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Workday's state dropdown lists full names ("Massachusetts"), but people type
+ * abbreviations ("MA"). Expanding before matching is the fix; see the
+ * short-query guard in scoreMatch for why fuzzy matching cannot be trusted to
+ * do this on its own.
+ *
+ * Territories and the Armed Forces entries are included because they appear in
+ * the real Workday list.
+ */
+AF.US_STATES = {
+  AL: 'Alabama', AK: 'Alaska', AS: 'American Samoa', AZ: 'Arizona', AR: 'Arkansas',
+  AA: 'Armed Forces Americas', AE: 'Armed Forces Europe', AP: 'Armed Forces Pacific',
+  CA: 'California', CO: 'Colorado', CT: 'Connecticut', DE: 'Delaware',
+  DC: 'District of Columbia', FL: 'Florida', GA: 'Georgia', GU: 'Guam',
+  HI: 'Hawaii', ID: 'Idaho', IL: 'Illinois', IN: 'Indiana', IA: 'Iowa',
+  KS: 'Kansas', KY: 'Kentucky', LA: 'Louisiana', ME: 'Maine', MD: 'Maryland',
+  MA: 'Massachusetts', MI: 'Michigan', MN: 'Minnesota', MS: 'Mississippi',
+  MO: 'Missouri', MT: 'Montana', NE: 'Nebraska', NV: 'Nevada',
+  NH: 'New Hampshire', NJ: 'New Jersey', NM: 'New Mexico', NY: 'New York',
+  NC: 'North Carolina', ND: 'North Dakota', MP: 'Northern Mariana Islands',
+  OH: 'Ohio', OK: 'Oklahoma', OR: 'Oregon', PA: 'Pennsylvania', PR: 'Puerto Rico',
+  RI: 'Rhode Island', SC: 'South Carolina', SD: 'South Dakota', TN: 'Tennessee',
+  TX: 'Texas', UT: 'Utah', VT: 'Vermont', VA: 'Virginia', VI: 'Virgin Islands, U.S.',
+  WA: 'Washington', WV: 'West Virginia', WI: 'Wisconsin', WY: 'Wyoming',
+};
+
+/** "MA" → "Massachusetts". Anything else passes through untouched. */
+AF.expandUsState = function (value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return raw;
+  return AF.US_STATES[raw.toUpperCase()] ?? raw;
+};
