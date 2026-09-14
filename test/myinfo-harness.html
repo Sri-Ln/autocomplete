@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>My Information harness</title>
+    <style>
+      body { margin:0; padding:24px; background:#0b0b10; color:#e8e8ee;
+             font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+      h1 { font-size:15px; margin:0 0 4px; }
+      p.lede { color:#8a8a9c; font-size:12.5px; margin:0 0 18px; max-width:70ch; }
+      .cols { display:grid; grid-template-columns:1fr 1fr; gap:20px; max-width:900px; }
+      fieldset { border:1px solid #2c2c38; border-radius:10px; padding:14px; margin:0; }
+      legend { color:#8a8a9c; font-size:11px; text-transform:uppercase; letter-spacing:.05em; padding:0 6px; }
+      label { display:block; font-size:11px; color:#8a8a9c; margin-bottom:10px; }
+      input[type=text] { display:block; width:100%; margin-top:3px; padding:7px 9px; border-radius:7px;
+             background:#0f0f15; border:1px solid #2c2c38; color:#e8e8ee; font-size:13px; }
+      button.trigger { display:block; width:100%; margin-top:3px; padding:7px 9px; border-radius:7px;
+             background:#0f0f15; border:1px solid #2c2c38; color:#e8e8ee; font-size:13px; text-align:left; cursor:pointer; }
+      .popup { position:absolute; z-index:50; margin-top:2px; width:260px; max-height:220px; overflow:auto;
+             background:#1d1d26; border:1px solid #44445a; border-radius:8px; padding:4px; }
+      .popup [role=option] { padding:6px 9px; border-radius:5px; font-size:12.5px; cursor:pointer; color:#e8e8ee; }
+      .popup [role=option]:hover { background:#2c2c38; }
+      pre { background:#0f0f15; border:1px solid #2c2c38; border-radius:8px; padding:11px;
+            font-size:11.5px; color:#9fc2e8; margin:0; overflow:auto; max-height:420px; }
+      .run { margin:20px 0 12px; display:flex; gap:8px; }
+      .run button { padding:8px 14px; border-radius:8px; border:none; background:#7c5cff; color:#fff;
+             font-weight:600; font-size:13px; cursor:pointer; font-family:inherit; }
+      .run button.alt { background:#34343f; color:#c9c9d8; }
+      #verdict { margin-top:12px; padding:11px 13px; border-radius:8px; font-size:13px; max-width:900px; }
+      .pass { background:#16281f; color:#7fd6a6; } .fail { background:#2b1717; color:#f09a9a; }
+      /* Mimics the progress-bar and phone-code noise that polluted the harvest. */
+      .noise { position:absolute; left:-9999px; }
+    </style>
+  </head>
+  <body>
+    <h1>My Information harness</h1>
+    <p class="lede">
+      Recreates the real <code>ghr.wd1.myworkdayjobs.com</code> DOM — same
+      <code>data-automation-id</code>s, a React-controlled typeahead for the source
+      question with <em>nested</em> categories, and a button+listbox for State.
+      It also reproduces the decoy elements that polluted harvesting (progress-bar
+      steps as <code>li[data-automation-id]</code>, and a stray
+      <code>promptOption</code> pill), so the pickers must scope correctly to pass.
+    </p>
+
+    <div id="root"></div>
+
+    <!-- Decoys: exactly what appeared in the real harvest and must be ignored. -->
+    <ul class="noise">
+      <li data-automation-id="progressBarActiveStep">current step 1 of 7My Information</li>
+      <li data-automation-id="progressBarInactiveStep">step 2 of 7My Experience</li>
+      <li data-automation-id="progressBarInactiveStep">step 7 of 7Review</li>
+    </ul>
+    <div class="noise" data-automation-id="promptOption">United States of America (+1)</div>
+
+    <div class="run">
+      <button id="run">Run the real fill</button>
+      <button id="reset" class="alt">Reset</button>
+    </div>
+    <div id="verdict"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+
+    <!-- The real extension code, not copies. -->
+    <script src="../content/00-namespace.js"></script>
+    <script src="../content/react-set.js"></script>
+    <script src="../content/match.js"></script>
+    <script src="../content/filler.js"></script>
+    <script src="../content/guards.js"></script>
+    <script src="../sites/workday.js"></script>
+    <script src="../sites/index.js"></script>
+
+    <script>
+      const { useState, useRef, createElement: h } = React;
+
+      /* Nested source tree, mirroring how Workday groups these. The answer is
+         deliberately "Goldman Sachs Career Site" — nothing like the tenant slug
+         "ghr" — so the tenant heuristic alone cannot find it. */
+      const SOURCE_TREE = {
+        'Employee Referral': [],
+        'Job Sites': ['Indeed', 'LinkedIn', 'Glassdoor', 'Goldman Sachs Career Site', 'ZipRecruiter'],
+        'Social Media': ['Facebook', 'X', 'Instagram'],
+        'University / College': ['Career Fair', 'Campus Event'],
+      };
+      const STATES = ['Select One','Alabama','Alaska','Arizona','California','Connecticut',
+        'Delaware','Florida','Georgia','Maine','Maryland','Massachusetts','Michigan',
+        'Minnesota','New Hampshire','New Jersey','New York','Ohio','Texas','Vermont'];
+
+      function TextField({ id, label, value, onChange }) {
+        return h('div', { 'data-automation-id': id },
+          h('label', null, label,
+            h('input', { type: 'text', value, onChange: (e) => onChange(e.target.value) })));
+      }
+
+      function Listbox({ id, label, value, options, onChange }) {
+        const [open, setOpen] = useState(false);
+        const popupId = `${id}-popup`;
+        return h('div', { 'data-automation-id': id },
+          h('label', null, label,
+            h('button', {
+              className: 'trigger', type: 'button',
+              'aria-controls': popupId, 'aria-expanded': open,
+              onClick: () => setOpen((o) => !o),
+            }, value || 'Select One')),
+          open && h('div', { className: 'popup', id: popupId, role: 'listbox' },
+            options.map((o) =>
+              h('div', {
+                key: o, role: 'option',
+                onClick: () => { onChange(o === 'Select One' ? '' : o); setOpen(false); },
+              }, o))));
+      }
+
+      /* Typeahead with nested drill-in, like Workday's source prompt. */
+      function Multiselect({ id, label, value, onChange }) {
+        const [open, setOpen] = useState(false);
+        const [query, setQuery] = useState('');
+        const [category, setCategory] = useState(null);
+        const popupId = `${id}-popup`;
+
+        let options;
+        if (query) {
+          // Search flattens across the whole tree, as Workday's does.
+          options = Object.values(SOURCE_TREE).flat()
+            .filter((o) => o.toLowerCase().includes(query.toLowerCase()));
+        } else if (category) {
+          options = SOURCE_TREE[category];
+        } else {
+          options = Object.keys(SOURCE_TREE);
+        }
+
+        return h('div', { 'data-automation-id': id },
+          h('label', null, label,
+            value
+              ? h('div', { 'data-automation-id': 'selectedItem' }, value)
+              : h('div', { 'data-automation-id': 'multiSelectContainer' },
+                  h('div', { 'data-automation-id': 'multiselectInputContainer' },
+                    h('input', {
+                      type: 'text', value: query, 'aria-controls': popupId,
+                      onFocus: () => setOpen(true),
+                      onClick: () => setOpen(true),
+                      onChange: (e) => { setQuery(e.target.value); setOpen(true); },
+                    })))),
+          open && !value && h('div', { className: 'popup', id: popupId, role: 'listbox' },
+            options.map((o) =>
+              h('div', {
+                key: o, role: 'option',
+                onClick: () => {
+                  if (!query && SOURCE_TREE[o]) { setCategory(o); return; } // drill in
+                  onChange(o); setOpen(false);
+                },
+              }, o))));
+      }
+
+      function Form() {
+        const [s, setS] = useState({
+          firstName: '', lastName: '', address1: '', city: '', zip: '',
+          phone: '', state: '', country: 'United States of America', source: '',
+        });
+        const set = (k) => (v) => setS((p) => ({ ...p, [k]: v }));
+        window.__state = s;
+
+        return h('div', { 'data-automation-id': 'applyFlowMyInfoPage' },
+          h('div', { className: 'cols' },
+            h('fieldset', null, h('legend', null, 'Workday form'),
+              h(Multiselect, { id: 'formField-source', label: 'How Did You Hear About Us?*',
+                               value: s.source, onChange: set('source') }),
+              // Pre-set, exactly as the real page arrives — exercises the
+              // idempotent "already correct, leave it alone" path.
+              h(Listbox, { id: 'formField-country', label: 'Country',
+                           value: s.country,
+                           options: ['Select One', 'Canada', 'India', 'United Kingdom',
+                                     'United States of America'],
+                           onChange: set('country') }),
+              h(TextField, { id: 'formField-legalName--firstName', label: 'First Name*',
+                             value: s.firstName, onChange: set('firstName') }),
+              h(TextField, { id: 'formField-legalName--lastName', label: 'Last Name*',
+                             value: s.lastName, onChange: set('lastName') }),
+              h(TextField, { id: 'formField-addressLine1', label: 'Address Line 1',
+                             value: s.address1, onChange: set('address1') }),
+              h(TextField, { id: 'formField-city', label: 'City',
+                             value: s.city, onChange: set('city') }),
+              h(Listbox, { id: 'formField-countryRegion', label: 'State',
+                           value: s.state, options: STATES, onChange: set('state') }),
+              h(TextField, { id: 'formField-postalCode', label: 'Postal Code',
+                             value: s.zip, onChange: set('zip') }),
+              h(TextField, { id: 'formField-phoneNumber', label: 'Phone Number*',
+                             value: s.phone, onChange: set('phone') }),
+              h('button', { 'data-automation-id': 'pageFooterNextButton', type: 'button' },
+                'Save and Continue')),
+            h('fieldset', null, h('legend', null, "React's internal state"),
+              h('pre', null, JSON.stringify(s, null, 2)))));
+      }
+
+      ReactDOM.createRoot(document.getElementById('root')).render(h(Form));
+
+      /* ---------- drive the real adapter ---------- */
+
+      const PROFILE = {
+        firstName: 'Ada', lastName: 'Lovelace', phone: '6175550142',
+        address1: '360 Huntington Ave', address2: 'Apt 4B',
+        city: 'Boston', state: 'MA', zip: '02115',
+        country: 'United States of America', source: 'Career Site',
+      };
+
+      window.__runFill = async () => {
+        const page = AF.sites.workday.pages.myInformation;
+        const ctx = { profile: PROFILE, credential: { email: 'x@y.z', password: 'p' } };
+        const values = page.values(ctx);
+
+        let report = AF.fillAll(page.fields, values, page.fieldTypes ?? {});
+        report = await page.customFill.call(page, values, report, ctx);
+
+        await new Promise((r) => setTimeout(r, 500));
+        return { report, state: window.__state };
+      };
+
+      document.getElementById('run').addEventListener('click', async () => {
+        const { report, state } = await window.__runFill();
+        const want = {
+          firstName: 'Ada', lastName: 'Lovelace', address1: '360 Huntington Ave',
+          city: 'Boston', zip: '02115', phone: '6175550142',
+          state: 'Massachusetts', source: 'Goldman Sachs Career Site',
+        };
+        const wrong = Object.entries(want).filter(([k, v]) => state[k] !== v);
+        const el = document.getElementById('verdict');
+        el.className = wrong.length ? 'fail' : 'pass';
+        el.textContent = wrong.length
+          ? `FAIL — ${wrong.map(([k, v]) => `${k}: got "${state[k]}" want "${v}"`).join(' · ')}`
+          : 'PASS — every field matches React state, including State (MA→Massachusetts) and the nested source answer.';
+      });
+
+      document.getElementById('reset').addEventListener('click', () => location.reload());
+    </script>
+  </body>
+</html>

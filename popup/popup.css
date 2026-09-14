@@ -144,6 +144,11 @@ label {
   font-size: 11px;
   color: var(--text-faint);
 }
+.opt {
+  color: #55556a;
+  font-size: 10px;
+  font-style: italic;
+}
 
 input[type="text"],
 input[type="email"],

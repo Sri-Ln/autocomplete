@@ -205,7 +205,13 @@
      * broken custom step still leaves the normal fields filled. */
     if (typeof ctx.page.customFill === 'function') {
       try {
-        report = (await ctx.page.customFill(values, report)) ?? report;
+        // Called on the page object so `this.pickers` resolves, and given the
+        // full context because pickers read the profile directly.
+        report =
+          (await ctx.page.customFill.call(ctx.page, values, report, {
+            profile: data.profile,
+            credential: data.credential,
+          })) ?? report;
       } catch (err) {
         AF.log('customFill threw', err);
       }
@@ -233,11 +239,27 @@
      * we can read a stale disabled-state off the submit button. */
     await new Promise((r) => setTimeout(r, 250));
 
+    /* A dropdown we could not set is a hard stop. allFieldsLanded() only reads
+     * text inputs, so without this a failed "How Did You Hear About Us?" would
+     * sail through and submit the form with a required question unanswered. */
+    const pickerFailures = (lastRun.report?.failed ?? []).filter(
+      (key) => ctx.page.pickers && key in ctx.page.pickers
+    );
+    if (pickerFailures.length) {
+      awaitingSubmitConfirm = false;
+      const detail = pickerFailures
+        .map((k) => lastRun.report.reasons?.[k] ?? k)
+        .join(' · ');
+      return say('warn', `Not submitting — ${detail}`);
+    }
+
     const reason = AF.runGuards({
       fieldMap: ctx.page.fields,
       values: lastRun.values,
       submitSelector: ctx.page.submit,
       errorSelectors: ctx.page.errorSelectors ?? [],
+      optionalFields: ctx.page.optionalFields ?? [],
+      extraKnownSelectors: Object.values(ctx.page.pickers ?? {}).map((p) => p.selector),
     });
 
     if (reason) {

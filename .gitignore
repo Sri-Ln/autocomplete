@@ -1,10 +1,12 @@
 # ── Browser-automation artifacts ─────────────────────────────────────
 # Written by Playwright/MCP while verifying the UI against live pages.
 # Throwaway: console logs, accessibility snapshots, and screenshots.
+# Screenshots land in the repo root; anything committed lives in a subdirectory.
+# A name-prefix list kept missing new ones (myinfo-verified.png slipped past
+# widget-*/popup-*/page-*), so ignore root-level PNGs wholesale — icons/ and any
+# other real assets are in subdirectories and unaffected.
 .playwright-mcp/
-widget-*.png
-popup-*.png
-page-*.png
+/*.png
 *-snapshot.yml
 
 # ── Packaged builds ──────────────────────────────────────────────────

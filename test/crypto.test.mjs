@@ -86,13 +86,22 @@ check('same plaintext → different ciphertext', blob.ct !== blob2.ct, true);
 const weird = 'pässwörd–🔐—ok';
 check('unicode survives', await C.decrypt(key, await C.encrypt(key, weird)), weird);
 
-/* cost — high enough to matter, low enough not to annoy */
-
+/* Derivation cost.
+ *
+ * Reported, NOT asserted. An earlier version failed the suite at 31ms against
+ * a `> 30ms` bound — wall-clock timing depends on the machine, on CPU
+ * frequency scaling and on how warm OpenSSL is, so it makes for a flaky test
+ * that fails for reasons having nothing to do with correctness.
+ *
+ * What actually matters is the iteration count, which is a constant we control,
+ * so that is what gets asserted. */
 const t0 = Date.now();
 await C.deriveKey('timing', salt);
-const ms = Date.now() - t0;
-console.log(`  ..    derive cost ~${ms}ms (want 100–1000ms)`);
-check('derive cost is in a sane range', ms > 30 && ms < 3000, true);
+console.log(`  ..    derive cost ~${Date.now() - t0}ms on this machine (informational)`);
+
+const iterations = Number(src.match(/PBKDF2_ITERATIONS\s*=\s*(\d+)/)?.[1] ?? 0);
+console.log(`  ..    PBKDF2 iterations: ${iterations.toLocaleString()}`);
+check('PBKDF2 iteration count meets the OWASP floor', iterations >= 210000, true);
 
 /* ------------------------------------------------------------------ */
 

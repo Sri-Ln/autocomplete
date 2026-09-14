@@ -101,6 +101,7 @@
         </div>
         <label>Phone<input type="tel" id="phone" /></label>
         <label>Address line 1<input type="text" id="address1" /></label>
+        <label>Address line 2 <span class="opt">optional</span><input type="text" id="address2" /></label>
         <div class="grid2">
           <label>City<input type="text" id="city" /></label>
           <label>State<input type="text" id="state" /></label>
@@ -109,6 +110,18 @@
           <label>ZIP<input type="text" id="zip" /></label>
           <label>Country<input type="text" id="country" /></label>
         </div>
+
+        <div class="divider">Application answers</div>
+        <label>
+          How did you hear about us?
+          <input type="text" id="source" placeholder="Career Site" />
+        </label>
+        <p class="fine">
+          Matched loosely against the dropdown, so "Career Site" finds
+          "Goldman Sachs Career Site". Set it to "LinkedIn" or "Indeed" if you
+          prefer. State accepts "MA" or "Massachusetts".
+        </p>
+
         <button class="primary" id="saveProfileBtn">Save profile</button>
       </div>
 

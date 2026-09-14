@@ -75,11 +75,15 @@ AF.guards = {
    * than trusting the fill report, because React can revert a value after the
    * fact if it disagreed with it.
    */
-  allFieldsLanded(fieldMap, values) {
+  allFieldsLanded(fieldMap, values, optional = []) {
     const empty = [];
+    const isOptional = new Set(optional);
 
     for (const [key, selector] of Object.entries(fieldMap)) {
       if (AF.isPlaceholder(selector)) continue;
+      // Not every tenant renders every field — Address Line 2 is absent on
+      // some forms entirely. An optional field that isn't there is not a bug.
+      if (isOptional.has(key)) continue;
       const want = values[key];
       if (want === undefined || want === null || want === '') continue;
 
@@ -180,12 +184,23 @@ AF.guards = {
  * Run every guard in order and return the FIRST reason to stop, or null to
  * proceed. Order matters: cheapest and most explanatory first.
  */
-AF.runGuards = function ({ fieldMap, values, submitSelector, errorSelectors }) {
+AF.runGuards = function ({
+  fieldMap,
+  values,
+  submitSelector,
+  errorSelectors,
+  optionalFields = [],
+  /* Selectors we drive through custom widgets (dropdowns, typeaheads) rather
+   * than the generic filler. They are not in fieldMap, but they ARE mapped —
+   * without this they'd be reported as unmapped required fields and block
+   * every submit. */
+  extraKnownSelectors = [],
+}) {
   const checks = [
     () => AF.guards.captcha(),
-    () => AF.guards.allFieldsLanded(fieldMap, values),
+    () => AF.guards.allFieldsLanded(fieldMap, values, optionalFields),
     () => AF.guards.validationErrors(errorSelectors),
-    () => AF.guards.unknownRequiredEmpty(Object.values(fieldMap)),
+    () => AF.guards.unknownRequiredEmpty([...Object.values(fieldMap), ...extraKnownSelectors]),
     () => AF.guards.submitReady(submitSelector),
   ];
 
