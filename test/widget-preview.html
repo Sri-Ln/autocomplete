@@ -33,6 +33,24 @@
       line marks the panel's 288px width — anything crossing it is overflowing.
       Used to verify the <code>all: unset</code> / <code>box-sizing</code> fix.
     </p>
+    <p>
+      Also where dragging gets exercised: grab the header strip and move the widget,
+      check it cannot leave the viewport, collapse it with <b>−</b> and confirm the
+      bubble lands where the panel was. The minimize button must still collapse on a
+      click, wobble and all. Position <i>persistence</i> cannot be tested here —
+      <code>chrome.storage</code> does not exist on a plain page, so saving and loading
+      both fail soft and the widget always starts bottom-right.
+    </p>
+    <p>
+      The bubble itself is a drag handle too — grab it while collapsed and it moves
+      like the header does, but a plain click still expands it, wobble and all. Drag
+      the widget away from its default corner, then collapse and expand it repeatedly:
+      the bottom-right corner should stay put rather than the widget appearing to jump
+      left and up. Dragging near an edge and expanding there should still clamp back
+      on screen. As above, this page can exercise the anchoring itself but not whether
+      it survives a reload, since that goes through the same storage that doesn't
+      exist here.
+    </p>
     <div class="states" id="states"></div>
     <div id="ruler"></div>
 
