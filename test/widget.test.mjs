@@ -170,5 +170,29 @@ const savedWhileBubble = toCorner(MOVED, BUBBLE);
 check('a position saved while collapsed restores footprint-independently as the panel',
   fromCorner(savedWhileBubble, PANEL), keepBottomRightCorner(MOVED, BUBBLE, PANEL));
 
+/* ---------------- the scrollbar is not viewport ----------------
+ * Issue #5. clampToViewport is handed whatever viewport() measured, so the bug
+ * lived entirely in that measurement rather than in the clamp: innerWidth counts
+ * the scrollbar, and a position:fixed containing block does not. The numbers are
+ * the real ones read out of Chrome on test/widget-preview.html — a 15px
+ * scrollbar on an 844px window. */
+
+const INNER = { width: 844, height: 724 };  // what window.innerWidth reported
+const CLIENT = { width: 829, height: 724 }; // documentElement.clientWidth — the truth
+const draggedHardRight = { left: 5000, top: 300 };
+
+check('measuring with the scrollbar included overhangs the usable width',
+  clampToViewport(draggedHardRight, PANEL, INNER).left + PANEL.width,
+  838); // past CLIENT.width — 9px of panel under the scrollbar
+
+check('measuring the layout viewport keeps the panel inside it',
+  clampToViewport(draggedHardRight, PANEL, CLIENT).left + PANEL.width,
+  CLIENT.width - MARGIN);
+
+check('the two measurements differ by exactly the scrollbar',
+  clampToViewport(draggedHardRight, PANEL, INNER).left -
+    clampToViewport(draggedHardRight, PANEL, CLIENT).left,
+  INNER.width - CLIENT.width);
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);
