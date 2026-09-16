@@ -26,6 +26,7 @@ AF.widget = (() => {
   /** Bookkeeping for the press currently in progress, or null. */
   let drag = null;
 
+  const POS_KEY = 'af_widget_pos'; // chrome.storage.local
   const EDGE_MARGIN = 6;           // px of viewport the widget may never cross
   const DRAG_THRESHOLD = 4;        // px of movement before a press becomes a drag
 
@@ -256,6 +257,8 @@ AF.widget = (() => {
     window.addEventListener('resize', keepInView);
 
     document.documentElement.append(host);
+
+    restorePosition(host);
   }
 
   function setCollapsed(value) {
@@ -288,6 +291,19 @@ AF.widget = (() => {
       left: clamp(p.left, view.width, size.width),
       top: clamp(p.top, view.height, size.height),
     };
+  }
+
+  /** Viewport-coordinate bottom-right corner of a box at `pos` with size
+   *  `size`. Storage keys off this corner rather than the top-left so a saved
+   *  position is independent of which footprint — panel or bubble — was on
+   *  screen when it was saved; see savePosition/loadPosition. */
+  function toCorner(pos, size) {
+    return { right: pos.left + size.width, bottom: pos.top + size.height };
+  }
+
+  /** Inverse of toCorner: the top-left that places a box of `size` at `corner`. */
+  function fromCorner(corner, size) {
+    return { left: corner.right - size.width, top: corner.bottom - size.height };
   }
 
   /** Move the host to an absolute viewport position. */
@@ -365,11 +381,59 @@ AF.widget = (() => {
   /** Idempotent on purpose: several events can each legitimately end one drag. */
   function endDrag(pointerId) {
     if (!drag || pointerId !== drag.id) return;
+    const moved = drag.active;
     drag = null;
     els.head.classList.remove('dragging');
 
     // Throws if the capture is already gone, which pointercancel usually does for us.
     try { els.head.releasePointerCapture(pointerId); } catch { /* already released */ }
+
+    // One write per drag rather than one per frame.
+    if (moved && pos) savePosition(pos);
+  }
+
+  /* Both storage directions fail soft. A content script's chrome.* calls start
+   * throwing ("Extension context invalidated") the moment the extension is
+   * reloaded or updated, and a widget that forgets where it was put is a much
+   * smaller problem than one that throws into the page.
+   *
+   * Saved as a bottom-right corner, not a top-left, so the value is
+   * footprint-independent: mount() always restores into the panel, so a
+   * position saved while collapsed must still land correctly on the wider
+   * box, and vice versa on the next collapse. */
+  function savePosition(p) {
+    try {
+      chrome.storage.local.set({ [POS_KEY]: toCorner(p, hostSize()) })?.catch(() => {});
+    } catch { /* no storage, or the context is gone */ }
+  }
+
+  async function loadPosition() {
+    try {
+      const got = await chrome.storage.local.get(POS_KEY);
+      const p = got?.[POS_KEY];
+      /* Storage is not trusted input. A half-written or hand-edited value must
+       * not become `left: NaNpx`, which silently un-positions the host. This
+       * also cleanly rejects a pre-corner {left, top} value from before this
+       * shape changed — right/bottom are undefined on it, so it falls back to
+       * the default corner instead of deriving NaN. The feature is unreleased,
+       * so that fallback is the only "migration" this needs. */
+      if (p && Number.isFinite(p.right) && Number.isFinite(p.bottom)) {
+        return { right: p.right, bottom: p.bottom };
+      }
+    } catch { /* no storage, or the context is gone */ }
+    return null;
+  }
+
+  async function restorePosition(forHost) {
+    const corner = await loadPosition();
+    /* An SPA navigation can destroy and re-mount the widget while that await is
+     * outstanding; applying to a host that is no longer ours would put the
+     * position on a detached element. And if the user has already grabbed the
+     * header in the meantime, their drag wins. */
+    if (host !== forHost || !corner || pos) return;
+    // The window may well be smaller than it was when this was saved.
+    const size = hostSize();
+    applyPosition(clampToViewport(fromCorner(corner, size), size, viewport()));
   }
 
   /**
@@ -425,13 +489,15 @@ AF.widget = (() => {
     root = null;
     els = {};
     drag = null;
+    pos = null; // the next mount() re-reads the saved position from storage
   }
 
   const isMounted = () => !!host;
 
-  // clampToViewport is exported for test/widget.test.mjs, not for callers.
+  // clampToViewport, toCorner and fromCorner are exported for
+  // test/widget.test.mjs, not for callers.
   return {
     mount, render, destroy, isMounted, setCollapsed,
-    clampToViewport,
+    clampToViewport, toCorner, fromCorner,
   };
 })();
