@@ -9,8 +9,8 @@
  * The widget is pure UI — it renders state and reports clicks. Every decision
  * about what to fill and whether to submit lives in main.js.
  *
- * It is also draggable — by its header strip when expanded; see the
- * "dragging" section below.
+ * It is also draggable — by its header strip when expanded, by the bubble
+ * itself when collapsed; see the "dragging" section below.
  */
 
 AF.widget = (() => {
@@ -147,14 +147,23 @@ AF.widget = (() => {
     .bubble {
       all: unset;
       box-sizing: border-box;            /* see note above */
-      cursor: pointer;
+      /* The whole bubble is the drag handle (unlike the header, there is no
+       * inner control to spare it for) — same cursor/touch-action/user-select
+       * treatment as .head, see the note there. */
+      cursor: grab;
+      touch-action: none;
+      -webkit-user-select: none;
+      user-select: none;
       width: 46px; height: 46px; border-radius: 50%;
       background: #7c5cff;
       display: flex; align-items: center; justify-content: center;
       box-shadow: 0 8px 24px rgba(0,0,0,.5);
     }
     .bubble:hover { background: #6a48f5; }
-    .bubble img { width: 24px; height: 24px; display: block; }
+    .bubble.dragging { cursor: grabbing; }
+    /* Same reasoning as .mark: without this, a press-drag on the image starts a
+     * native image drag instead of ours. */
+    .bubble img { width: 24px; height: 24px; display: block; -webkit-user-drag: none; }
   `;
 
   /* The mark, inline so it needs no web_accessible_resources entry. */
@@ -243,17 +252,21 @@ AF.widget = (() => {
       if (e.key === 'Enter') handlers.onAction?.(els.pass.value);
     });
     els.collapse.addEventListener('click', () => setCollapsed(true));
-    els.bubble.addEventListener('click', () => setCollapsed(false));
+    els.bubble.addEventListener('click', () => {
+      /* A click fires right after pointerup even though the drag captured the
+       * pointer — without this guard every drag-to-move of the bubble would
+       * also re-expand it. Cleared unconditionally the first time it is read,
+       * so a dropped pointerup/click pairing can never leave it stuck swallowing
+       * a later, unrelated click. */
+      if (suppressBubbleClick) { suppressBubbleClick = false; return; }
+      setCollapsed(false);
+    });
 
-    els.head.addEventListener('pointerdown', onPointerDown);
-    els.head.addEventListener('pointermove', onPointerMove);
-    els.head.addEventListener('pointerup', (e) => endDrag(e.pointerId));
-    els.head.addEventListener('pointercancel', (e) => endDrag(e.pointerId));
-    /* Belt and braces: capture can be lost without a pointerup — the element
-     * being removed does it, and so does the page taking the pointer for a
-     * native drag. A drag we never ended would leave the widget stuck to the
-     * cursor with no button held, which is the worst way for this to fail. */
-    els.head.addEventListener('lostpointercapture', (e) => endDrag(e.pointerId));
+    /* Both handles' listeners live inside the shadow root and are removed with
+     * the host, so destroy() has nothing to undo for them. The window listener
+     * below is the one that would outlive us. */
+    attachDragHandle(els.head, { guardControls: true });
+    attachDragHandle(els.bubble, { isBubble: true });
     window.addEventListener('resize', keepInView);
 
     document.documentElement.append(host);
@@ -262,11 +275,48 @@ AF.widget = (() => {
   }
 
   function setCollapsed(value) {
+    /* Measured before the footprint swap, and only when the widget has been
+     * dragged — in the default corner the host is still right/bottom anchored,
+     * which already keeps that corner fixed for free, and keepInView() below is
+     * a no-op there (see its own guard). */
+    const oldSize = pos ? hostSize() : null;
+
     collapsed = value;
     els.panel.classList.toggle('hidden', value);
     els.bubble.classList.toggle('hidden', !value);
-    keepInView();
+
+    if (!pos) return keepInView();
+
+    /* A dragged widget is left/top anchored. Leaving left/top untouched across
+     * the footprint swap would hold the TOP-LEFT corner fixed instead, which
+     * reads as the whole widget jumping left and up when it collapses — the
+     * bug report. Anchor the bottom-right corner instead, matching what the
+     * default right/bottom anchoring already does natively. */
+    const newSize = hostSize();
+    applyPosition(clampToViewport(
+      keepBottomRightCorner(pos, oldSize, newSize),
+      newSize,
+      viewport()
+    ));
   }
+
+  /* ── DRAGGING ────────────────────────────────────────────────────────
+   * The header strip and the collapsed bubble are both handles. Pointer Events
+   * rather than mouse events, because setPointerCapture keeps the drag alive
+   * when the pointer outruns the widget or leaves the window, and guarantees a
+   * pointerup/pointercancel comes back to us so nothing is left half-dragged.
+   *
+   * The host starts anchored bottom-right. The first drag switches it to
+   * left/top (see applyPosition) so the arithmetic is a plain rect.left + dx.
+   *
+   * Only one handle can be visible at a time (the other is display:none), but
+   * the machinery is shared rather than duplicated per handle: `drag` records
+   * which element started the press, and every other function reads it from
+   * there instead of being told again. */
+
+  /** True right after a bubble drag ends, for exactly one click — see the
+   *  bubble's click listener in mount(). */
+  let suppressBubbleClick = false;
 
   const viewport = () => ({ width: window.innerWidth, height: window.innerHeight });
 
@@ -290,6 +340,20 @@ AF.widget = (() => {
     return {
       left: clamp(p.left, view.width, size.width),
       top: clamp(p.top, view.height, size.height),
+    };
+  }
+
+  /**
+   * Re-anchors a left/top position across a footprint change so the box's
+   * bottom-right corner stays put — collapsing shrinks toward that corner,
+   * expanding grows out of it, instead of both keeping the top-left fixed.
+   * Pure and unclamped; callers clamp the result, same as every other raw
+   * position (see setCollapsed).
+   */
+  function keepBottomRightCorner(pos, oldSize, newSize) {
+    return {
+      left: pos.left + oldSize.width - newSize.width,
+      top: pos.top + oldSize.height - newSize.height,
     };
   }
 
@@ -327,7 +391,31 @@ AF.widget = (() => {
     applyPosition(clampToViewport(pos, hostSize(), viewport()));
   }
 
-  function onPointerDown(e) {
+  /**
+   * Wires up one element — .head or .bubble — as a drag handle, sharing the
+   * pointerdown/move/up/cancel/lostpointercapture machinery below rather than
+   * each handle getting its own copy.
+   *
+   * @param {boolean} opts.guardControls  skip starting a drag on a press that
+   *   landed on a nested control. Only .head needs this — the minimize button
+   *   lives inside it. The bubble IS a button and the whole thing is the
+   *   handle, so it must not have this guard.
+   * @param {boolean} opts.isBubble  mark drags started here so endDrag can
+   *   swallow the click-to-expand that follows one.
+   */
+  function attachDragHandle(el, opts) {
+    el.addEventListener('pointerdown', (e) => onPointerDown(e, el, opts));
+    el.addEventListener('pointermove', onPointerMove);
+    el.addEventListener('pointerup', (e) => endDrag(e.pointerId));
+    el.addEventListener('pointercancel', (e) => endDrag(e.pointerId));
+    /* Belt and braces: capture can be lost without a pointerup — the element
+     * being removed does it, and so does the page taking the pointer for a
+     * native drag. A drag we never ended would leave the widget stuck to the
+     * cursor with no button held, which is the worst way for this to fail. */
+    el.addEventListener('lostpointercapture', (e) => endDrag(e.pointerId));
+  }
+
+  function onPointerDown(e, handle, opts) {
     if (e.button > 0) return; // a right- or middle-press is not a drag
 
     /* closest() from inside a shadow tree stops at the shadow root, so this
@@ -335,11 +423,19 @@ AF.widget = (() => {
      * into the page. It keeps the minimize button clickable and covers any
      * interactive control added to the strip later. Not applied to the bubble:
      * it is itself a button, and the whole bubble is meant to drag. */
-    if (e.target?.closest?.('button, a, input, select, textarea, [role="button"]')) return;
+    if (opts.guardControls &&
+        e.target?.closest?.('button, a, input, select, textarea, [role="button"]')) return;
+
+    /* A fresh press invalidates any suppression left over from a previous
+     * bubble drag whose click never arrived (e.g. it ended in pointercancel) —
+     * otherwise that stale flag would eat this press's own click instead. */
+    if (opts.isBubble) suppressBubbleClick = false;
 
     const r = host.getBoundingClientRect();
     drag = {
       id: e.pointerId,
+      handle,
+      isBubble: !!opts.isBubble,
       startX: e.clientX,
       startY: e.clientY,
       originLeft: r.left,
@@ -349,7 +445,7 @@ AF.widget = (() => {
       size: { width: r.width, height: r.height },
       active: false, // flips when the movement threshold is passed
     };
-    els.head.setPointerCapture(e.pointerId);
+    handle.setPointerCapture(e.pointerId);
   }
 
   function onPointerMove(e) {
@@ -368,7 +464,7 @@ AF.widget = (() => {
       // Nearly every click carries a pixel or two of wobble; that is still a click.
       if (Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
       drag.active = true;
-      els.head.classList.add('dragging');
+      drag.handle.classList.add('dragging');
     }
 
     applyPosition(clampToViewport(
@@ -382,11 +478,15 @@ AF.widget = (() => {
   function endDrag(pointerId) {
     if (!drag || pointerId !== drag.id) return;
     const moved = drag.active;
+    const { handle, isBubble } = drag;
     drag = null;
-    els.head.classList.remove('dragging');
+    handle.classList.remove('dragging');
 
     // Throws if the capture is already gone, which pointercancel usually does for us.
-    try { els.head.releasePointerCapture(pointerId); } catch { /* already released */ }
+    try { handle.releasePointerCapture(pointerId); } catch { /* already released */ }
+
+    // The click that follows this pointerup must not re-expand the bubble.
+    if (moved && isBubble) suppressBubbleClick = true;
 
     // One write per drag rather than one per frame.
     if (moved && pos) savePosition(pos);
@@ -489,15 +589,16 @@ AF.widget = (() => {
     root = null;
     els = {};
     drag = null;
+    suppressBubbleClick = false;
     pos = null; // the next mount() re-reads the saved position from storage
   }
 
   const isMounted = () => !!host;
 
-  // clampToViewport, toCorner and fromCorner are exported for
-  // test/widget.test.mjs, not for callers.
+  // clampToViewport, keepBottomRightCorner, toCorner and fromCorner are
+  // exported for test/widget.test.mjs, not for callers.
   return {
     mount, render, destroy, isMounted, setCollapsed,
-    clampToViewport, toCorner, fromCorner,
+    clampToViewport, keepBottomRightCorner, toCorner, fromCorner,
   };
 })();
