@@ -8,6 +8,9 @@
  *
  * The widget is pure UI — it renders state and reports clicks. Every decision
  * about what to fill and whether to submit lives in main.js.
+ *
+ * It is also draggable — by its header strip when expanded; see the
+ * "dragging" section below.
  */
 
 AF.widget = (() => {
@@ -16,6 +19,15 @@ AF.widget = (() => {
   let els = {};
   let handlers = {}; // { onFill, onUnlock, onOpenOptions }
   let collapsed = false;
+
+  /** {left, top} once the user has moved the widget; null while it still sits
+   *  in its default bottom-right corner. */
+  let pos = null;
+  /** Bookkeeping for the press currently in progress, or null. */
+  let drag = null;
+
+  const EDGE_MARGIN = 6;           // px of viewport the widget may never cross
+  const DRAG_THRESHOLD = 4;        // px of movement before a press becomes a drag
 
   /* ── THE FIX FOR "ELEMENTS FLOWING OUT OF BOUNDS" ──────────────────
    * `all: unset` is the right tool for shrugging off Workday's global CSS, but
@@ -50,8 +62,26 @@ AF.widget = (() => {
       padding: 10px 12px;
       background: #1d1d26;
       border-bottom: 1px solid #2c2c38;
+
+      /* The whole strip is the drag handle.
+       *   touch-action: none is what actually stops a touch drag from scrolling
+       *     the page — by the time a pointermove arrives the browser has already
+       *     committed to a scroll and preventDefault() is too late.
+       *   user-select: none stops a drag that starts here from painting the
+       *     header text blue and leaving the page with a stray selection. It is
+       *     unconditional rather than applied during the drag, because a
+       *     selection begins on the press, before we know it is a drag. */
+      cursor: grab;
+      touch-action: none;
+      -webkit-user-select: none;
+      user-select: none;
     }
-    .mark { width: 20px; height: 20px; border-radius: 6px; flex: none; display: block; }
+    .head.dragging { cursor: grabbing; }
+    /* -webkit-user-drag: none because the mark is an <img>, and Chromium's own
+       image drag-and-drop would otherwise start on a press and cancel ours —
+       the header would stop following the pointer mid-gesture. */
+    .mark { width: 20px; height: 20px; border-radius: 6px; flex: none; display: block;
+            -webkit-user-drag: none; }
     .title-wrap { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.25; }
     .title { font-weight: 650; font-size: 12px; letter-spacing: .01em;
              white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -196,6 +226,7 @@ AF.widget = (() => {
 
     els = {
       panel: root.querySelector('.panel'),
+      head: root.querySelector('.head'),
       dot: root.getElementById('dot'),
       title: root.getElementById('title'),
       ctx: root.getElementById('ctx'),
@@ -213,6 +244,17 @@ AF.widget = (() => {
     els.collapse.addEventListener('click', () => setCollapsed(true));
     els.bubble.addEventListener('click', () => setCollapsed(false));
 
+    els.head.addEventListener('pointerdown', onPointerDown);
+    els.head.addEventListener('pointermove', onPointerMove);
+    els.head.addEventListener('pointerup', (e) => endDrag(e.pointerId));
+    els.head.addEventListener('pointercancel', (e) => endDrag(e.pointerId));
+    /* Belt and braces: capture can be lost without a pointerup — the element
+     * being removed does it, and so does the page taking the pointer for a
+     * native drag. A drag we never ended would leave the widget stuck to the
+     * cursor with no button held, which is the worst way for this to fail. */
+    els.head.addEventListener('lostpointercapture', (e) => endDrag(e.pointerId));
+    window.addEventListener('resize', keepInView);
+
     document.documentElement.append(host);
   }
 
@@ -220,6 +262,114 @@ AF.widget = (() => {
     collapsed = value;
     els.panel.classList.toggle('hidden', value);
     els.bubble.classList.toggle('hidden', !value);
+    keepInView();
+  }
+
+  const viewport = () => ({ width: window.innerWidth, height: window.innerHeight });
+
+  /* The panel and the bubble share one host and the hidden one is display:none,
+   * so the host's shrink-to-fit box is always the footprint of whatever is
+   * currently on screen. Measuring it beats hardcoding either size. */
+  function hostSize() {
+    const r = host.getBoundingClientRect();
+    return { width: r.width, height: r.height };
+  }
+
+  /**
+   * The only part of dragging that is pure, and the only part worth testing —
+   * see test/widget.test.mjs. Keeps the widget wholly on screen; when the
+   * viewport is smaller than the widget, the top-left corner wins, since that
+   * is the end with the header on it.
+   */
+  function clampToViewport(p, size, view, margin = EDGE_MARGIN) {
+    const clamp = (v, extent, span) =>
+      Math.round(Math.max(margin, Math.min(v, extent - span - margin)));
+    return {
+      left: clamp(p.left, view.width, size.width),
+      top: clamp(p.top, view.height, size.height),
+    };
+  }
+
+  /** Move the host to an absolute viewport position. */
+  function applyPosition(next) {
+    pos = next;
+    /* Setting left/top is also what switches the anchor: right/bottom go to
+     * auto in the same breath so the two pairs can never fight. setProperty's
+     * third argument preserves the !important that every host style carries —
+     * these are the only page-level styles the extension sets and Workday's
+     * global CSS will win any unweighted contest. */
+    host.style.setProperty('left', `${next.left}px`, 'important');
+    host.style.setProperty('top', `${next.top}px`, 'important');
+    host.style.setProperty('right', 'auto', 'important');
+    host.style.setProperty('bottom', 'auto', 'important');
+  }
+
+  /** Re-clamp in place. A no-op until the widget has actually been moved —
+   *  the default bottom-right anchoring keeps itself on screen. */
+  function keepInView() {
+    if (!host || !pos) return;
+    applyPosition(clampToViewport(pos, hostSize(), viewport()));
+  }
+
+  function onPointerDown(e) {
+    if (e.button > 0) return; // a right- or middle-press is not a drag
+
+    /* closest() from inside a shadow tree stops at the shadow root, so this
+     * asks "did the press land on a control in the header?" without escaping
+     * into the page. It keeps the minimize button clickable and covers any
+     * interactive control added to the strip later. Not applied to the bubble:
+     * it is itself a button, and the whole bubble is meant to drag. */
+    if (e.target?.closest?.('button, a, input, select, textarea, [role="button"]')) return;
+
+    const r = host.getBoundingClientRect();
+    drag = {
+      id: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      originLeft: r.left,
+      originTop: r.top,
+      /* Measured once: the footprint cannot change mid-drag, and re-measuring
+       * every pointermove would force a layout on each frame. */
+      size: { width: r.width, height: r.height },
+      active: false, // flips when the movement threshold is passed
+    };
+    els.head.setPointerCapture(e.pointerId);
+  }
+
+  function onPointerMove(e) {
+    if (!drag || e.pointerId !== drag.id) return;
+
+    /* The same insurance as lostpointercapture, from the other side: no buttons
+     * held means the press is over whether or not we were told. Observed for
+     * real — a dropped pointerup left the widget trailing the cursor across the
+     * page until the next click. */
+    if (e.buttons === 0) return endDrag(e.pointerId);
+
+    const dx = e.clientX - drag.startX;
+    const dy = e.clientY - drag.startY;
+
+    if (!drag.active) {
+      // Nearly every click carries a pixel or two of wobble; that is still a click.
+      if (Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+      drag.active = true;
+      els.head.classList.add('dragging');
+    }
+
+    applyPosition(clampToViewport(
+      { left: drag.originLeft + dx, top: drag.originTop + dy },
+      drag.size,
+      viewport()
+    ));
+  }
+
+  /** Idempotent on purpose: several events can each legitimately end one drag. */
+  function endDrag(pointerId) {
+    if (!drag || pointerId !== drag.id) return;
+    drag = null;
+    els.head.classList.remove('dragging');
+
+    // Throws if the capture is already gone, which pointercancel usually does for us.
+    try { els.head.releasePointerCapture(pointerId); } catch { /* already released */ }
   }
 
   /**
@@ -261,16 +411,27 @@ AF.widget = (() => {
     } else {
       els.msg.classList.add('hidden');
     }
+
+    /* A long message can grow the panel by a hundred pixels. While the widget
+     * hangs off the bottom-right that just pushes the top edge up, but once it
+     * is top-anchored the growth goes downward and can run off screen. */
+    keepInView();
   }
 
   function destroy() {
+    window.removeEventListener('resize', keepInView);
     host?.remove();
     host = null;
     root = null;
     els = {};
+    drag = null;
   }
 
   const isMounted = () => !!host;
 
-  return { mount, render, destroy, isMounted, setCollapsed };
+  // clampToViewport is exported for test/widget.test.mjs, not for callers.
+  return {
+    mount, render, destroy, isMounted, setCollapsed,
+    clampToViewport,
+  };
 })();
