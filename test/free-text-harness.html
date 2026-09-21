@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Visa free-text harness</title>
+    <style>
+      body { margin:0; padding:24px; background:#0b0b10; color:#e8e8ee;
+             font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+      h1 { font-size:15px; margin:0 0 4px; }
+      p.lede { color:#8a8a9c; font-size:12.5px; margin:0 0 18px; max-width:74ch; }
+      fieldset { border:1px solid #2c2c38; border-radius:10px; padding:14px; margin:0 0 16px;
+                 max-width:620px; }
+      legend { color:#8a8a9c; font-size:11px; text-transform:uppercase;
+               letter-spacing:.05em; padding:0 6px; }
+      label { display:block; font-size:12px; color:#b9b9c9; margin-bottom:14px; }
+      textarea, input[type=text] { display:block; width:100%; margin-top:5px; padding:8px 10px;
+             border-radius:7px; background:#0f0f15; border:1px solid #2c2c38; color:#e8e8ee;
+             font-size:13px; font-family:inherit; }
+      textarea { min-height:70px; resize:vertical; }
+      pre { background:#0f0f15; border:1px solid #2c2c38; border-radius:8px; padding:11px;
+            font-size:11.5px; color:#9fc2e8; margin:0; overflow:auto; max-width:620px; }
+      .run { margin:20px 0 12px; display:flex; gap:8px; }
+      .run button { padding:8px 14px; border-radius:8px; border:none; background:#7c5cff;
+             color:#fff; font-weight:600; font-size:13px; cursor:pointer; font-family:inherit; }
+      #verdict { margin:12px 0; padding:11px 13px; border-radius:8px; font-size:13px; max-width:620px; }
+      .pass { background:#16281f; color:#7fd6a6; } .fail { background:#2b1717; color:#f09a9a; }
+      .hidden-dupe { display:none; }
+    </style>
+  </head>
+  <body>
+    <h1>Visa free-text harness</h1>
+    <p class="lede">
+      Loads the real <code>content/free-text.js</code> and <code>content/pill.js</code> —
+      not copies. Proves discovery picks exactly the visa prose questions out of a
+      page that also contains a cover letter, a short-answer box, a Yes/No
+      sponsorship question and a hidden duplicate. Click into the first textarea
+      to see the live pill.
+    </p>
+
+    <fieldset>
+      <legend>Should be found</legend>
+
+      <div data-automation-id="formField-visaStatus">
+        <label for="q1">Please explain your visa status and work authorization
+          <textarea id="q1" rows="3"></textarea>
+        </label>
+      </div>
+
+      <div data-automation-id="formField-sponsorDetails">
+        <label for="q2">If you require sponsorship, please provide details
+          <textarea id="q2" rows="3"></textarea>
+        </label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Must NOT be found</legend>
+
+      <label for="n1">Please provide a cover letter
+        <textarea id="n1" rows="3"></textarea>
+      </label>
+
+      <label for="n2">Is there anything else you would like us to know?
+        <textarea id="n2" rows="2"></textarea>
+      </label>
+
+      <!-- On topic, but a Yes/No the sponsorship rule already owns. -->
+      <label for="n3">Will you now or in the future require visa sponsorship?
+        <input type="text" id="n3" maxlength="3" />
+      </label>
+
+      <!-- On topic and asks to explain, but too short to hold the answer.
+           Filling it would truncate silently at 30 characters. -->
+      <label for="n4">Visa type — please specify
+        <input type="text" id="n4" maxlength="30" />
+      </label>
+
+      <!-- Workday keeps hidden duplicates in the DOM; this must not double-count. -->
+      <div class="hidden-dupe" data-automation-id="formField-visaStatusDupe">
+        <label for="n5">Please explain your visa status
+          <textarea id="n5"></textarea>
+        </label>
+      </div>
+    </fieldset>
+
+    <div class="run">
+      <button id="runBtn">Run checks</button>
+    </div>
+    <div id="verdict"></div>
+    <pre id="out"></pre>
+
+    <script>
+      // The namespace and the log shim the content scripts expect.
+      window.AF = { debug: false, log: (...a) => window.AF.debug && console.log('[AF]', ...a) };
+    </script>
+    <script src="../content/match.js"></script>
+    <script src="../content/react-set.js"></script>
+    <script src="../content/questions.js"></script>
+    <script src="../content/free-text.js"></script>
+    <script src="../content/pill.js"></script>
+    <script>
+      /* Deliberately synthetic. A fixture should never be a real person's
+         immigration status — this file is in a public repo, and the harness
+         proves the plumbing, which does not care what the words say. Long
+         enough to exercise the maxlength guard. */
+      const EXPLANATION =
+        'FIXTURE: a saved visa explanation goes here. This stand-in text exists only to be ' +
+        'written into a field and read back out again, and is long enough to be refused by ' +
+        'a short-answer box.';
+
+      /* The live pill, wired the way main.js wires it. */
+      AF.pill.setAcceptHandler((el) => {
+        const res = AF.freeText.fill(el, EXPLANATION);
+        AF.pill.show(el, {
+          label: res.ok ? 'Inserted — review it' : res.reason,
+          state: res.ok ? 'done' : 'warn',
+        });
+      });
+
+      document.addEventListener('focusin', (e) => {
+        const el = e.target;
+        if (!AF.freeText.acceptsLongText(el)) return AF.pill.hide();
+        if (!AF.questions.wantsVisaExplanation(AF.freeText.questionFor(el))) return AF.pill.hide();
+        if (el.value.trim()) return AF.pill.hide();
+        AF.pill.show(el, { label: 'Insert my visa status explanation' });
+      });
+      document.addEventListener('focusout', (e) => {
+        if (e.relatedTarget?.id === 'af-pill-host') return;
+        if (AF.pill.currentTarget() === e.target) AF.pill.hide();
+      });
+      window.addEventListener('scroll', () => AF.pill.reposition(), { capture: true, passive: true });
+      window.addEventListener('resize', () => AF.pill.reposition());
+
+      const lines = [];
+      let failed = 0;
+      const check = (label, actual, expected) => {
+        const ok = JSON.stringify(actual) === JSON.stringify(expected);
+        if (!ok) failed++;
+        lines.push(`${ok ? '  ok  ' : ' FAIL '} ${label}` +
+          (ok ? '' : `\n         got  ${JSON.stringify(actual)}\n         want ${JSON.stringify(expected)}`));
+      };
+
+      function run() {
+        lines.length = 0;
+        failed = 0;
+
+        const found = AF.freeText.findVisaQuestions().map((q) => q.el.id).sort();
+        check('finds exactly the two visa prose questions', found, ['q1', 'q2']);
+
+        // Reading the question text out of a real label, not a fixture string.
+        check('reads the question from the label',
+          AF.freeText.questionFor(document.getElementById('q1')),
+          'Please explain your visa status and work authorization');
+
+        const q1 = document.getElementById('q1');
+        const q2 = document.getElementById('q2');
+        AF.setNativeValue(q1, '');
+        AF.setNativeValue(q2, '');
+
+        // The write must survive a read-back, which is what setNativeValue buys.
+        check('fills an empty field', AF.freeText.fill(q1, EXPLANATION).ok, true);
+        check('and the value landed', q1.value, EXPLANATION);
+
+        // Idempotent: re-running must report 'already', never write twice.
+        const again = AF.freeText.fill(q1, EXPLANATION);
+        check('re-filling is a no-op', [again.ok, !!again.already], [true, true]);
+
+        // Now that q1 holds an answer, only q2 is still pending.
+        check('a filled field stops being pending',
+          AF.freeText.findVisaQuestions().filter((q) => !q.filled).map((q) => q.el.id),
+          ['q2']);
+
+        /* Your own words always win. This is the guard that stops a saved
+         * paragraph clobbering an answer you tailored for one employer. */
+        const MINE = 'I already wrote my own answer here.';
+        AF.setNativeValue(q2, MINE);
+        const refused = AF.freeText.fill(q2, EXPLANATION);
+        check('refuses to overwrite an answer you typed',
+          [refused.ok, refused.reason], [false, 'already has an answer — left alone']);
+        check('and leaves your text untouched', q2.value, MINE);
+
+        AF.setNativeValue(q1, ''); // leave the page reusable
+        AF.setNativeValue(q2, '');
+
+        /* ---- the pill itself ---- */
+
+        document.getElementById('n1').focus(); // cover letter
+        check('no pill on the cover letter', AF.pill.isShowing(), false);
+
+        document.getElementById('n4').focus(); // maxlength=30
+        check('no pill on a short-answer box', AF.pill.isShowing(), false);
+
+        q1.focus();
+        check('pill offered on the visa question', AF.pill.isShowing(), true);
+        check('and aimed at that field', AF.pill.currentTarget()?.id, 'q1');
+
+        const btn = document.getElementById('af-pill-host').shadowRoot.querySelector('.pill');
+        btn.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true }));
+
+        check('clicking it inserts the text', q1.value, EXPLANATION);
+        check('and touches nothing else', q2.value, '');
+
+        /* Blurred on purpose: AF.setNativeValue blurs so Workday runs its
+         * required-field validation. See content/react-set.js. */
+        check('the field is left blurred and validated', document.activeElement === q1, false);
+
+        AF.pill.hide();
+        AF.setNativeValue(q1, '');
+
+        const v = document.getElementById('verdict');
+        v.className = failed ? 'fail' : 'pass';
+        v.textContent = failed ? `${failed} check(s) FAILED` : 'All checks passed';
+        document.getElementById('out').textContent = lines.join('\n');
+        return failed;
+      }
+
+      document.getElementById('runBtn').addEventListener('click', run);
+      window.__afRun = run; // for the Playwright driver
+      run();
+    </script>
+  </body>
+</html>

@@ -35,7 +35,7 @@
   <body>
     <h1>My Information harness</h1>
     <p class="lede">
-      Recreates the real <code>ghr.wd1.myworkdayjobs.com</code> DOM — same
+      Recreates a real Workday My Information DOM — same
       <code>data-automation-id</code>s, a React-controlled typeahead for the source
       question with <em>nested</em> categories, and a button+listbox for State.
       It also reproduces the decoy elements that polluted harvesting (progress-bar
@@ -53,6 +53,23 @@
     </ul>
     <div class="noise" data-automation-id="promptOption">United States of America (+1)</div>
 
+    <!--
+      The Country Phone Code field, reproduced exactly as harvested: a REQUIRED,
+      permanently EMPTY text input with no aria-label and no name, whose actual
+      value sits in a sibling pill. This is the field that reported itself as
+      just "text" and blocked submit on a fully answered form.
+    -->
+    <div id="phoneCodeField" data-automation-id="formField-countryPhoneCode">
+      <div data-automation-id="multiSelectContainer">
+        <div data-automation-id="selectedItemList">
+          <div data-automation-id="selectedItem_0">United States of America (+1)</div>
+        </div>
+        <div data-automation-id="multiselectInputContainer">
+          <input type="text" required />
+        </div>
+      </div>
+    </div>
+
     <div class="run">
       <button id="run">Run the real fill</button>
       <button id="reset" class="alt">Reset</button>
@@ -66,6 +83,8 @@
     <script src="../content/00-namespace.js"></script>
     <script src="../content/react-set.js"></script>
     <script src="../content/match.js"></script>
+    <script src="../content/questions.js"></script>
+    <script src="../content/radio-groups.js"></script>
     <script src="../content/filler.js"></script>
     <script src="../content/guards.js"></script>
     <script src="../sites/workday.js"></script>
@@ -75,17 +94,19 @@
       const { useState, useRef, createElement: h } = React;
 
       /* Nested source tree, mirroring how Workday groups these. The answer is
-         deliberately "Goldman Sachs Career Site" — nothing like the tenant slug
-         "ghr" — so the tenant heuristic alone cannot find it. */
+         deliberately worded nothing like a tenant slug, so the hostname
+         heuristic alone cannot find it — only the fuzzy match can. */
       const SOURCE_TREE = {
         'Employee Referral': [],
-        'Job Sites': ['Indeed', 'LinkedIn', 'Glassdoor', 'Goldman Sachs Career Site', 'ZipRecruiter'],
+        'Job Sites': ['Indeed', 'LinkedIn', 'Glassdoor', 'Acme Corp Career Site', 'ZipRecruiter'],
         'Social Media': ['Facebook', 'X', 'Instagram'],
         'University / College': ['Career Fair', 'Campus Event'],
       };
+      // Includes the full M-run, which is what makes a bare "MI" ambiguous.
       const STATES = ['Select One','Alabama','Alaska','Arizona','California','Connecticut',
         'Delaware','Florida','Georgia','Maine','Maryland','Massachusetts','Michigan',
-        'Minnesota','New Hampshire','New Jersey','New York','Ohio','Texas','Vermont'];
+        'Minnesota','Mississippi','Missouri','Montana','New Hampshire','New Jersey',
+        'New York','Ohio','Texas','Vermont'];
 
       function TextField({ id, label, value, onChange }) {
         return h('div', { 'data-automation-id': id },
@@ -152,6 +173,42 @@
               }, o))));
       }
 
+      /* Yes/No questions, React-controlled radios — the shape application
+         questions actually take. Note the company names are DIFFERENT from each
+         other and from anything in the profile's employer list, which is the
+         whole point: each must be answered on its own merits. */
+      const QUESTIONS = [
+        'Have you ever worked for Vertex Dynamics as a full-time or temporary employee?',
+        'Have you ever worked for Initech as a full-time or temporary employee?',
+        'Are you legally authorized to work in the United States?',
+        'Will you now or in the future require sponsorship for employment visa status?',
+        'Are you willing to relocate?',
+        'Have you ever been convicted of a felony?',
+        'Do you hold a current security clearance?',
+      ];
+
+      function Questions() {
+        const [answers, setAnswers] = useState({});
+        window.__answers = answers;
+
+        return h('div', { 'data-automation-id': 'applicationQuestions' },
+          QUESTIONS.map((q, i) =>
+            h('fieldset', { key: i, style: { marginTop: '10px', padding: '8px' } },
+              h('legend', { style: { fontSize: '11px', color: '#8a8a9c' } }, q),
+              ['Yes', 'No'].map((opt) =>
+                h('label', {
+                  key: opt,
+                  style: { display: 'inline-flex', gap: '5px', marginRight: '14px',
+                           color: '#e8e8ee', fontSize: '12.5px' },
+                },
+                  h('input', {
+                    type: 'radio', name: `q${i}`, value: opt,
+                    checked: answers[i] === opt,
+                    onChange: () => setAnswers((a) => ({ ...a, [i]: opt })),
+                  }),
+                  opt)))));
+      }
+
       function Form() {
         const [s, setS] = useState({
           firstName: '', lastName: '', address1: '', city: '', zip: '',
@@ -186,6 +243,7 @@
                              value: s.zip, onChange: set('zip') }),
               h(TextField, { id: 'formField-phoneNumber', label: 'Phone Number*',
                              value: s.phone, onChange: set('phone') }),
+              h(Questions, null),
               h('button', { 'data-automation-id': 'pageFooterNextButton', type: 'button' },
                 'Save and Continue')),
             h('fieldset', null, h('legend', null, "React's internal state"),
@@ -196,11 +254,25 @@
 
       /* ---------- drive the real adapter ---------- */
 
+      /* Entirely synthetic. Never put real personal data in a fixture — it ends
+         up in git history, in screenshots, and in every clone of the repo.
+         "MI" is the state under test because it collides with Michigan,
+         Minnesota, Mississippi AND Missouri, which is the regression this
+         harness guards. */
       const PROFILE = {
-        firstName: 'Ada', lastName: 'Lovelace', phone: '6175550142',
-        address1: '360 Huntington Ave', address2: 'Apt 4B',
-        city: 'Boston', state: 'MA', zip: '02115',
-        country: 'United States of America', source: 'Career Site',
+        firstName: 'Testy', lastName: 'McTestface', phone: '5555550100',
+        address1: '123 Example Street', address2: 'Unit 7',
+        city: 'Springfield', state: 'MI', zip: '00000',
+        country: 'USA', source: 'Career Site',
+        // Inputs to the question engine.
+        employers: ['Initech', 'Globex Corporation'],
+        relativesAt: [],
+        over18: 'yes',
+        workAuthorized: 'yes',
+        needsSponsorship: 'no',
+        willingToRelocate: 'yes',
+        willingToTravel: '',
+        noticePeriod: '2 weeks',
       };
 
       window.__runFill = async () => {
@@ -211,16 +283,32 @@
         let report = AF.fillAll(page.fields, values, page.fieldTypes ?? {});
         report = await page.customFill.call(page, values, report, ctx);
 
+        // The Yes/No questions, via the real engine.
+        const questions = AF.answerQuestions({
+          profile: PROFILE,
+          answers: window.__learned ?? {},
+        });
+
         await new Promise((r) => setTimeout(r, 500));
-        return { report, state: window.__state };
+        return { report, questions, state: window.__state, answers: window.__answers };
+      };
+
+      /** Simulates the user answering a question by hand, then capturing it. */
+      window.__learnFrom = (index, value) => {
+        const input = document.querySelector(`input[name="q${index}"][value="${value}"]`);
+        AF.setNativeChecked(input, true);
+        const out = AF.captureAnswers(window.__learned ?? {});
+        window.__learned = out.learned;
+        return out.stored;
       };
 
       document.getElementById('run').addEventListener('click', async () => {
         const { report, state } = await window.__runFill();
         const want = {
-          firstName: 'Ada', lastName: 'Lovelace', address1: '360 Huntington Ave',
-          city: 'Boston', zip: '02115', phone: '6175550142',
-          state: 'Massachusetts', source: 'Goldman Sachs Career Site',
+          firstName: 'Testy', lastName: 'McTestface', address1: '123 Example Street',
+          city: 'Springfield', zip: '00000', phone: '5555550100',
+          state: 'Michigan', country: 'United States of America',
+          source: 'Acme Corp Career Site',
         };
         const wrong = Object.entries(want).filter(([k, v]) => state[k] !== v);
         const el = document.getElementById('verdict');

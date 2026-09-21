@@ -136,22 +136,24 @@ const REAL_STATES = [
   'Vermont', 'Virginia', 'Washington', 'West Virginia', 'Wisconsin', 'Wyoming',
 ];
 
-check('MA expands to Massachusetts', AF.expandUsState('MA'), 'Massachusetts');
-check('lowercase ma expands too', AF.expandUsState('ma'), 'Massachusetts');
-check('full name passes through', AF.expandUsState('Massachusetts'), 'Massachusetts');
+check('MI expands to Michigan', AF.expandUsState('MI'), 'Michigan');
+check('lowercase mi expands too', AF.expandUsState('mi'), 'Michigan');
+check('full name passes through', AF.expandUsState('Michigan'), 'Michigan');
 check('unknown value passes through', AF.expandUsState('Ontario'), 'Ontario');
 check('empty stays empty', AF.expandUsState(''), '');
 
-check('expanded MA selects Massachusetts',
-  AF.bestMatch(REAL_STATES, [AF.expandUsState('MA')])?.text, 'Massachusetts');
+check('expanded MI selects Michigan',
+  AF.bestMatch(REAL_STATES, [AF.expandUsState('MI')])?.text, 'Michigan');
 
-// The three-letter guard, proven directly.
-check('bare MA no longer matches Maine',
-  AF.bestMatch(REAL_STATES, ['MA']), null);
+// The short-query guard, proven directly. "MI" prefix-matches Michigan,
+// Minnesota, Mississippi and Missouri; "MA" matches Maine, Maryland and
+// Massachusetts. Either way the first alphabetically would win, silently.
+check('bare MI no longer matches Michigan',
+  AF.bestMatch(REAL_STATES, ['MI']), null);
 check('short queries score zero unless exact',
-  AF.scoreMatch('Maine', 'MA'), 0);
+  AF.scoreMatch('Michigan', 'MI'), 0);
 check('short query still matches itself exactly',
-  AF.scoreMatch('MA', 'ma'), 1);
+  AF.scoreMatch('MI', 'mi'), 1);
 
 // Every abbreviation must round-trip against the real list.
 const missing = [];
@@ -161,6 +163,44 @@ for (const [abbr, full] of Object.entries(AF.US_STATES)) {
   if (hit?.text !== full) missing.push(`${abbr}→${hit?.text ?? 'null'} (want ${full})`);
 }
 check('every US abbreviation resolves correctly', missing, []);
+
+/* ---------------- countries ----------------
+ * Regression: a profile country of "USA" reported
+ *   no option matching "USA"
+ * against a dropdown that plainly contained "United States of America". The
+ * short-query guard above (added for states) was rejecting it, because "USA"
+ * is short and not an exact hit. Acronyms need their own path. */
+
+const REAL_COUNTRIES = [
+  'Select One', 'Canada', 'India', 'Japan', 'United Arab Emirates',
+  'United Kingdom', 'United States Minor Outlying Islands',
+  'United States of America',
+];
+
+check('acronymOf drops stopwords', AF.acronymOf('United States of America'), 'usa');
+check('acronymOf handles two words', AF.acronymOf('United Kingdom'), 'uk');
+
+for (const input of ['USA', 'usa', 'US', 'U.S.', 'United States', 'America']) {
+  check(`country "${input}" resolves`,
+    AF.bestMatch(REAL_COUNTRIES, [AF.expandCountry(input)])?.text,
+    'United States of America');
+}
+check('full country name is untouched',
+  AF.bestMatch(REAL_COUNTRIES, [AF.expandCountry('United States of America')])?.text,
+  'United States of America');
+check('UK resolves', AF.bestMatch(REAL_COUNTRIES, [AF.expandCountry('UK')])?.text,
+  'United Kingdom');
+check('unknown country passes through', AF.expandCountry('Narnia'), 'Narnia');
+
+// "United States of America" must beat "United States Minor Outlying Islands",
+// which shares a longer literal prefix.
+check('exact name beats a longer-prefix sibling',
+  AF.bestMatch(REAL_COUNTRIES, ['United States of America'])?.text,
+  'United States of America');
+
+// The acronym path must not become a new source of wrong guesses.
+check('CA does not acronym-match Canada', AF.bestMatch(REAL_COUNTRIES, ['CA']), null);
+check('JP does not acronym-match Japan', AF.bestMatch(REAL_COUNTRIES, ['JP']), null);
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

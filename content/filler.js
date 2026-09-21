@@ -33,6 +33,16 @@ function isVisible(el) {
  * a not-yet-measured container still resolves.
  */
 AF.resolveField = function (selector, root = document) {
+  // A selector may be a list of alternatives: tenants name the same field
+  // differently, and the first one that resolves wins.
+  if (Array.isArray(selector)) {
+    for (const alt of selector) {
+      const hit = AF.resolveField(alt, root);
+      if (hit) return hit;
+    }
+    return null;
+  }
+
   let matches;
   try {
     matches = Array.from(root.querySelectorAll(selector));
@@ -122,7 +132,108 @@ AF.fillAll = function (fieldMap, values, types = {}) {
 
 /** Placeholder selectors are marked so they can never silently half-work. */
 AF.isPlaceholder = (selector) =>
-  typeof selector === 'string' && selector.includes('REPLACE_ME');
+  Array.isArray(selector)
+    ? selector.every((s) => AF.isPlaceholder(s))
+    : typeof selector === 'string' && selector.includes('REPLACE_ME');
+
+/**
+ * A human-readable identifier for a field, for diagnostics.
+ *
+ * The old version fell back through data-automation-id → aria-label → name →
+ * type, and on Workday's multi-select inputs all three of the first options are
+ * absent, so it reported the field as "text" — the input's *type*. Useless both
+ * to the user and to anyone trying to patch a selector.
+ *
+ * This walks outward instead: the field's own id, then the enclosing
+ * formField-* wrapper, then the visible label text.
+ */
+AF.describeField = function (el) {
+  if (!el) return 'unknown field';
+
+  const parts = [];
+
+  const own = el.getAttribute('data-automation-id');
+  if (own) parts.push(own);
+
+  if (!own) {
+    /* Prefer the outer formField-* wrapper over whatever ancestor happens to be
+     * nearest. Workday nests these — formField-countryPhoneCode wraps
+     * multiSelectContainer wraps multiselectInputContainer — and only the
+     * outermost is the id you would actually put in a selector map. */
+    const wrapper =
+      el.closest('[data-automation-id^="formField-"]') ?? el.closest('[data-automation-id]');
+    const id = wrapper?.getAttribute('data-automation-id');
+    if (id) parts.push(id);
+  }
+
+  const label =
+    el.getAttribute('aria-label') ||
+    (el.id && document.querySelector(`label[for="${CSS.escape(el.id)}"]`)?.textContent) ||
+    el.closest('label')?.textContent ||
+    el.closest('[data-automation-id^="formField-"]')?.querySelector('label')?.textContent;
+
+  const clean = label?.replace(/\s+/g, ' ').trim().slice(0, 48);
+  if (clean) parts.push(`"${clean}"`);
+
+  if (!parts.length && el.name) parts.push(el.name);
+  if (!parts.length && el.placeholder) parts.push(`placeholder "${el.placeholder}"`);
+
+  return parts.length ? parts.join(' ') : `unlabelled ${el.tagName.toLowerCase()}`;
+};
+
+/**
+ * Is this input part of a multi-select that already holds a selection?
+ *
+ * Workday's multi-selects keep an empty, `required` text input for searching
+ * and render the chosen value as a separate pill. Reading `.value` on that
+ * input therefore reports empty no matter what the user picked — which made the
+ * pre-submit guard refuse to submit a fully answered form, naming a field it
+ * could not even identify.
+ */
+AF.isSatisfiedMultiselect = function (el) {
+  const container = el.closest(
+    '[data-automation-id^="formField-"], [data-automation-id="multiSelectContainer"]'
+  );
+  if (!container) return false;
+
+  const pill = container.querySelector(
+    '[data-automation-id^="selectedItem"], [data-automation-id="selectedItemList"]'
+  );
+  return !!pill && !!pill.textContent.trim();
+};
+
+/**
+ * Find a form field by the text of its visible label.
+ *
+ * The escape hatch for cross-tenant drift. data-automation-ids are stable
+ * within a tenant but not across them — one tenant's "How Did You Hear About
+ * Us?" is formField-source, another names it something else entirely, and the
+ * field then reports as simply not on the page. The question text, though, is
+ * Workday boilerplate and barely varies.
+ *
+ * Returns the enclosing [data-automation-id] wrapper, so callers can drive it
+ * exactly as they would a wrapper found by selector.
+ */
+AF.findFieldByLabel = function (labelText, { minScore = 0.6 } = {}) {
+  const wanted = AF.normalizeText(labelText);
+  if (!wanted) return null;
+
+  let best = null;
+
+  for (const wrap of document.querySelectorAll('[data-automation-id^="formField-"]')) {
+    if (!wrap.getClientRects().length) continue;
+
+    // The wrapper's own text is the label plus whatever is currently selected;
+    // take the leading portion so a long selected value can't drown the label.
+    const text = AF.normalizeText((wrap.textContent || '').slice(0, 120));
+    if (!text) continue;
+
+    const score = text.includes(wanted) ? 0.9 : AF.scoreMatch(text, wanted);
+    if (score >= minScore && (!best || score > best.score)) best = { wrap, score };
+  }
+
+  return best?.wrap ?? null;
+};
 
 /** Human-readable one-liner for the widget status area. */
 AF.summarize = function (report) {

@@ -49,6 +49,11 @@ only if one company's password rules force a different password there.
 **Profile.** Name, phone, address. Used on the application form (My Information),
 not on the signup page.
 
+**Visa status explanation.** A paragraph, for applications that ask you to *explain*
+your visa status in prose rather than Yes/No. That question does not appear on My
+Information — it turns up later in the flow, on a page the registry does not
+recognise — so it is handled by its own page-agnostic path. See below.
+
 ## Harvesting the real selectors
 
 1. Open a live Workday **Create Account** page.
@@ -74,14 +79,56 @@ AF.forcePage = 'createAccount'   // in the page console
 AF.debug = true                  // log every field write
 ```
 
+## The visa status explanation
+
+The one thing here that does not go through the selector map, and the reason is
+worth knowing:
+
+**Where it lives.** Some applications ask "Please explain your visa status" as a
+textarea rather than a Yes/No. That question appears *later* in the application,
+on a page `AF.currentPage()` returns `null` for — no adapter entry, no field map,
+nothing for `filler.js` to resolve. So `content/free-text.js` works from what is
+on screen instead, discovering prose fields structurally the same way
+`radio-groups.js` discovers Yes/No ones.
+
+**What makes a match.** A question needs a visa/work-authorisation **topic** *and*
+a request for an **explanation**. Both, never one:
+
+| Question | Wants prose? |
+|---|---|
+| "Will you now or in the future require visa sponsorship?" | no — Yes/No, the `sponsorship` rule owns it |
+| "If you require sponsorship, please provide details" | yes |
+
+Both say "sponsorship". Matching on topic alone would paste a personal legal
+statement over a Yes/No question that is already answered correctly.
+
+**It is never filled automatically.** The pill offers; a click accepts. It also
+never overwrites an answer you typed, and never fills a box whose `maxlength` is
+too short to hold the text — that would truncate silently and send half a
+sentence.
+
+**It never submits.** On an unrecognised page there is no `page.submit` and no
+`errorSelectors`, so `AF.runGuards()` cannot run — no CAPTCHA check, no
+empty-required-field check, no validation-error check. A submit button there
+would be the only one in the extension with no safety scan behind it. Fill,
+review, click Continue yourself.
+
+**When the pill doesn't appear.** The question is written per company, so
+detection will miss sometimes. **Copy** on the Profile tab is the fallback and
+does not depend on any of the above.
+
 ## Tests
 
 No framework, no npm. Node's built-in WebCrypto is the same implementation
 Chrome's service worker uses, so these exercise the real thing.
 
 ```
-node test/crypto.test.mjs    # 11 checks — key derivation, round-trip, tampering
-node test/vault.test.mjs     # 17 checks — default vs. per-host credential lookup
+node test/crypto.test.mjs     # 11 checks — key derivation, round-trip, tampering
+node test/vault.test.mjs      # 17 checks — default vs. per-host credential lookup
+node test/match.test.mjs      # 48 checks — the fuzzy option matcher
+node test/questions.test.mjs  # 60 checks — how each question is classified
+node test/free-text.test.mjs  # 11 checks — which fields can hold a paragraph
+node test/widget.test.mjs     # 24 checks — widget positioning arithmetic
 ```
 
 `vault.test.mjs` is the one that proves the behaviour you actually want: one
@@ -127,13 +174,34 @@ partial fill finishes cleanly on a second click.
 | `content/filler.js` | Selector → element resolution, isolated writes, run report. |
 | `content/guards.js` | The pre-submit safety scan. |
 | `content/registry.js` | Which site / which page. |
+| `content/radio-groups.js` | Finds Yes/No questions structurally. |
+| `content/free-text.js` | Finds prose questions the same way. Visa explanation. |
 | `content/widget.js` | The floating button. Shadow DOM. |
+| `content/pill.js` | The field-anchored "use my saved answer" chip. Shadow DOM. |
 | `content/main.js` | Orchestration. |
 | `sites/workday.js` | **All Workday selectors.** The only file Workday changes affect. |
 | `tools/harvest.js` | Console snippet for finding real automation-ids. |
 | `test/harness.html` | Proves the setter drives React state. |
+| `test/free-text-harness.html` | Visa question discovery + the live pill, in a real DOM. |
 | `test/crypto.test.mjs` | Key derivation, encryption, tamper detection. |
 | `test/vault.test.mjs` | Default vs. per-host credential lookup. |
+
+## manifest.json — why it has no comments
+
+Chrome validates every top-level manifest key and warns on ones it does not
+recognise, so the usual `"//": "note"` trick is not available. An earlier version
+carried two such keys and Chrome flagged both on load. Manifest notes live here
+instead.
+
+**`host_permissions`** is separate from `content_scripts.matches` and is genuinely
+needed: the popup reads `tab.url` to prefill the override host, and messages
+content scripts filtered by URL. `content_scripts.matches` alone does not grant
+either. **Keep the two lists in sync.**
+
+**`content_scripts.js` order matters.** MV3 content scripts declared in the
+manifest cannot use `import`, so the files share a `window.AF` namespace and run
+in array order. `content/00-namespace.js` must be first; `sites/*.js` must come
+before `content/registry.js`, which reads `AF.SITES`.
 
 ## Adding another site
 
@@ -142,7 +210,7 @@ Three edits, plus a host pattern:
 1. Create `sites/greenhouse.js` following the shape of `sites/workday.js`.
 2. Add it to `AF.SITES` in `sites/index.js`.
 3. Add it to the `js` array in `manifest.json` (before `content/registry.js`).
-4. Add its host to `content_scripts.matches` in `manifest.json`.
+4. Add its host to **both** `content_scripts.matches` and `host_permissions`.
 
 Nothing in `content/` or `background/` is Workday-specific, so nothing else changes.
 

@@ -16,6 +16,7 @@ const K_META = 'af_meta';       // { v, salt, check:{iv,ct} }
 const K_PROFILE = 'af_profile'; // plaintext personal details
 const K_VAULT = 'af_vault';     // { default: entry|null, overrides: { host: entry } }
 const K_SETTINGS = 'af_settings';
+const K_ANSWERS = 'af_answers'; // { <question signature>: { answer, seen, updated } }
 const SK_KEY = 'af_session_key'; // raw AES key, base64, memory only
 
 /**
@@ -38,12 +39,46 @@ export const EMPTY_PROFILE = {
   /* Answer to "How Did You Hear About Us?".
    *
    * Deliberately a free-text preference rather than something derived from the
-   * hostname. The hostname gives a tenant slug, and slugs do not match the
-   * wording in the dropdown: ghr.wd1.myworkdayjobs.com is Goldman Sachs, whose
-   * option is nothing like "ghr". The matcher scores this against whatever the
-   * dropdown actually offers, so "Career Site" finds "<Company> Career Site". */
+   * hostname. A Workday tenant slug is often an internal abbreviation that
+   * looks nothing like the company's name, so it cannot be used to guess the
+   * dropdown's wording. The matcher scores this against whatever the dropdown
+   * actually offers, so "Career Site" finds "<Company> Career Site". */
   source: 'Career Site',
+
+  /* ---- inputs to the question engine (content/questions.js) ----
+   *
+   * These exist so company-specific questions can be COMPUTED rather than
+   * recalled. "Have you ever worked for X?" is answered by checking X against
+   * `employers`, which is correct per company — storing one remembered answer
+   * would be right for one employer and wrong for every other. */
+
+  employers: [],    // companies you have worked for
+  relativesAt: [],  // companies where you have a relative; empty list means "none"
+
+  /* Tri-state: 'yes' | 'no' | '' . Empty means DO NOT ANSWER — never a default.
+   * Work authorisation and sponsorship in particular are legal declarations, so
+   * they are answered only from a value set here deliberately. */
+  over18: '',
+  workAuthorized: '',
+  needsSponsorship: '',
+  willingToRelocate: '',
+  willingToTravel: '',
+  noticePeriod: '',
+
+  /* Free-text answer to "Please explain your visa status".
+   *
+   * A paragraph rather than a flag, because some applications ask for the visa
+   * story in prose. Stored as one block: the wording is personal and legal, and
+   * splitting it into fields the extension assembles would be inventing
+   * sentences on the user's behalf.
+   *
+   * Never written during an ordinary fill — it is offered, and a click accepts
+   * it. See content/free-text.js. */
+  visaExplanation: '',
 };
+
+/** Profile keys holding arrays rather than strings. */
+export const PROFILE_LIST_FIELDS = ['employers', 'relativesAt'];
 
 export const DEFAULT_SETTINGS = {
   autoSubmit: true,   // false → widget fills, then waits for a second click
@@ -70,8 +105,38 @@ export async function getProfile() {
 export function setProfile(profile) {
   // Whitelist: never let an unexpected key ride along into storage.
   const clean = {};
-  for (const k of Object.keys(EMPTY_PROFILE)) clean[k] = String(profile[k] ?? '').trim();
+  for (const k of Object.keys(EMPTY_PROFILE)) {
+    if (PROFILE_LIST_FIELDS.includes(k)) {
+      const list = Array.isArray(profile[k])
+        ? profile[k]
+        : String(profile[k] ?? '').split(/[\n,]/);
+      clean[k] = list.map((s) => String(s).trim()).filter(Boolean);
+    } else {
+      clean[k] = String(profile[k] ?? '').trim();
+    }
+  }
   return setLocal(K_PROFILE, clean);
+}
+
+/* ------------------------------------------------------------------ */
+/* learned answers                                                     */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Answers the user gave by hand, keyed by question signature.
+ *
+ * Only questions that carry no employer-specific variable ever land here —
+ * content/questions.js enforces that in remember(), so a "No" for one company
+ * can never be served up for another. Stores the question shape and the answer,
+ * nothing about which company asked it or when you applied.
+ */
+export const getAnswers = () => getLocal(K_ANSWERS, {});
+export const setAnswers = (answers) => setLocal(K_ANSWERS, answers ?? {});
+
+export async function forgetAnswer(signature) {
+  const answers = await getAnswers();
+  delete answers[signature];
+  return setAnswers(answers);
 }
 
 export async function getSettings() {

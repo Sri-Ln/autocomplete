@@ -119,6 +119,7 @@ async function getFillData(hostname) {
     credential: { email: match.entry.email, password },
     source: match.source, // 'default' | 'override' — the widget reports which
     settings: await S.getSettings(),
+    answers: await S.getAnswers(),
   };
 }
 
@@ -168,6 +169,18 @@ const handlers = {
   saveCredential: (m) => saveCredential(m),
   async deleteCredential(m) {
     await S.deleteCredential(m.host ?? null);
+    return { ok: true };
+  },
+
+  async getAnswers() {
+    return { ok: true, answers: await S.getAnswers() };
+  },
+  async saveAnswers(m) {
+    await S.setAnswers(m.answers);
+    return { ok: true };
+  },
+  async forgetAnswer(m) {
+    await S.forgetAnswer(m.signature);
     return { ok: true };
   },
 

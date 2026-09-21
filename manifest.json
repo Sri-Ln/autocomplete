@@ -6,7 +6,6 @@
 
   "permissions": ["storage"],
 
-  "//host_permissions": "Needed so the popup can read tab.url (to prefill the override host) and message content scripts by URL. Keep this list in sync with content_scripts.matches below.",
   "host_permissions": ["https://*.myworkdayjobs.com/*"],
 
   "icons": {
@@ -33,7 +32,6 @@
 
   "content_scripts": [
     {
-      "//": "ADDING A NEW SITE: add its host pattern here, and add sites/<name>.js to both the js array below and to sites/index.js. Those are the only three edits.",
       "matches": ["https://*.myworkdayjobs.com/*"],
       "run_at": "document_idle",
       "all_frames": false,
@@ -41,12 +39,16 @@
         "content/00-namespace.js",
         "content/react-set.js",
         "content/match.js",
+        "content/questions.js",
+        "content/radio-groups.js",
+        "content/free-text.js",
         "content/filler.js",
         "content/guards.js",
         "sites/workday.js",
         "sites/index.js",
         "content/registry.js",
         "content/widget.js",
+        "content/pill.js",
         "content/main.js"
       ]
     }

@@ -128,20 +128,28 @@ AF.guards = {
       if (!field || known.has(field)) continue;
       if (field.type === 'hidden' || !field.getClientRects().length) continue;
       if (isHoneypot(field)) continue; // must stay empty — see HONEYPOTS above
+
+      /* A multi-select's search box is permanently empty and permanently
+       * `required`; the answer lives in a pill beside it. Without this, an
+       * answered "How Did You Hear About Us?" or a prefilled Country Phone Code
+       * blocks every submit — and, having no automation-id or label of its own,
+       * reports itself only as "text". */
+      if (AF.isSatisfiedMultiselect(field)) continue;
+
       // Password fields we deliberately skip are handled by the caller, not here.
       if (!String(field.value ?? '').trim()) {
-        orphans.push(
-          field.getAttribute('data-automation-id') ||
-            field.getAttribute('aria-label') ||
-            field.name ||
-            field.type
-        );
+        orphans.push(AF.describeField(field));
       }
     }
 
-    return orphans.length
-      ? `Not submitting — unmapped required field(s) still empty: ${orphans.join(', ')}. Harvest their data-automation-id and add them to sites/workday.js.`
-      : null;
+    if (!orphans.length) return null;
+
+    return (
+      `Not submitting — ${orphans.length} required field(s) still empty: ` +
+      `${orphans.join(' · ')}. ` +
+      `If these should be filled automatically, harvest their data-automation-id ` +
+      `into sites/workday.js; otherwise fill them by hand and click again.`
+    );
   },
 
   /**
