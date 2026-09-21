@@ -318,7 +318,16 @@ AF.widget = (() => {
    *  bubble's click listener in mount(). */
   let suppressBubbleClick = false;
 
-  const viewport = () => ({ width: window.innerWidth, height: window.innerHeight });
+  /* documentElement.clientWidth/Height, not window.innerWidth/Height: the inner*
+   * pair includes the scrollbar, but the host is position:fixed and a fixed
+   * element's containing block excludes it. Measuring with inner* told the clamp
+   * it had ~15px more room than existed, so the 6px right margin was really a
+   * 9px overhang tucked under the scrollbar. Identical on pages with no
+   * scrollbar, or where the platform draws overlay ones. */
+  const viewport = () => ({
+    width: document.documentElement.clientWidth,
+    height: document.documentElement.clientHeight,
+  });
 
   /* The panel and the bubble share one host and the hidden one is display:none,
    * so the host's shrink-to-fit box is always the footprint of whatever is
