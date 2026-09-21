@@ -26,6 +26,22 @@ AF.tokenize = function (s) {
   return n ? n.split(' ') : [];
 };
 
+/** Words too small to carry meaning in an acronym. */
+const ACRONYM_STOPWORDS = new Set(['of', 'the', 'and', 'for', 'de', 'a', 'an']);
+
+/**
+ * Initials of the significant words.
+ *   "United States of America" → "usa"
+ *   "United Kingdom"           → "uk"
+ * Used to let a country typed as "USA" find its full-name option.
+ */
+AF.acronymOf = function (s) {
+  return AF.tokenize(s)
+    .filter((t) => !ACRONYM_STOPWORDS.has(t))
+    .map((t) => t[0])
+    .join('');
+};
+
 /**
  * How well does `option` answer `wanted`? Returns 0..1.
  *
@@ -39,6 +55,18 @@ AF.scoreMatch = function (option, wanted) {
   if (!o || !w) return 0;
 
   if (o === w) return 1;
+
+  /* Acronyms, checked BEFORE the short-query guard below.
+   *
+   * "USA" must find "United States of America". The guard that stops "MA" from
+   * matching "Maine" would otherwise reject it too, because both are short and
+   * neither is an exact hit. An acronym is different from a prefix: it has to
+   * account for EVERY significant word, so it cannot collide the way a prefix
+   * does — "MA" is not the acronym of "Maine", but "USA" is the acronym of
+   * "United States of America". */
+  if (w.length >= 2 && w.length <= 5 && !w.includes(' ')) {
+    if (AF.acronymOf(o) === w) return 0.95;
+  }
 
   /* Short queries must NOT prefix-match.
    *
@@ -193,4 +221,39 @@ AF.expandUsState = function (value) {
   const raw = String(value ?? '').trim();
   if (!raw) return raw;
   return AF.US_STATES[raw.toUpperCase()] ?? raw;
+};
+
+/* ------------------------------------------------------------------ */
+/* countries                                                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Short forms people actually type, mapped to Workday's wording.
+ *
+ * acronymOf() handles "USA" on its own, but not "US" (two letters against a
+ * three-word name) or "U.S." (the dot normalises to a space, so it is no
+ * longer a single token). Those need to be spelled out.
+ *
+ * Keys are normalized — lowercase, punctuation stripped.
+ */
+AF.COUNTRY_ALIASES = {
+  'us': 'United States of America',
+  'u s': 'United States of America',
+  'usa': 'United States of America',
+  'u s a': 'United States of America',
+  'united states': 'United States of America',
+  'america': 'United States of America',
+  'uk': 'United Kingdom',
+  'u k': 'United Kingdom',
+  'great britain': 'United Kingdom',
+  'uae': 'United Arab Emirates',
+  'korea': 'Korea, Republic of',
+  'south korea': 'Korea, Republic of',
+};
+
+/** "USA" → "United States of America". Unknown values pass through. */
+AF.expandCountry = function (value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return raw;
+  return AF.COUNTRY_ALIASES[AF.normalizeText(raw)] ?? raw;
 };

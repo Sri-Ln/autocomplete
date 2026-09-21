@@ -58,6 +58,7 @@
       <nav class="tabs" role="tablist">
         <button class="tab active" data-tab="login" role="tab">Login</button>
         <button class="tab" data-tab="profile" role="tab">Profile</button>
+        <button class="tab" data-tab="answers" role="tab">Answers</button>
         <button class="tab" data-tab="settings" role="tab">Settings</button>
       </nav>
 
@@ -118,11 +119,118 @@
         </label>
         <p class="fine">
           Matched loosely against the dropdown, so "Career Site" finds
-          "Goldman Sachs Career Site". Set it to "LinkedIn" or "Indeed" if you
-          prefer. State accepts "MA" or "Massachusetts".
+          "&lt;Company&gt; Career Site". Set it to "LinkedIn" or "Indeed" if you
+          prefer. State and Country accept either short or full form.
+        </p>
+
+        <label>
+          Companies you've worked for
+          <textarea id="employers" rows="3" placeholder="Google&#10;Acme Corp"></textarea>
+        </label>
+        <p class="fine">
+          One per line. This is what answers "Have you ever worked for
+          &lt;Company&gt;?" — <b>correctly per company</b>, because the company
+          asking is checked against this list rather than a remembered answer.
+        </p>
+
+        <label>
+          Companies where you have a relative
+          <textarea id="relativesAt" rows="2" placeholder="leave blank if none"></textarea>
+        </label>
+
+        <div class="qrow">
+          <span class="qlabel">Are you 18 or older?</span>
+          <div class="seg" id="over18" role="radiogroup" aria-label="Are you 18 or older?">
+            <button type="button" data-value="" title="Leave blank — you'll answer it">–</button>
+            <button type="button" data-value="yes">Yes</button>
+            <button type="button" data-value="no">No</button>
+          </div>
+        </div>
+
+        <div class="qrow">
+          <span class="qlabel">Willing to relocate?</span>
+          <div class="seg" id="willingToRelocate" role="radiogroup" aria-label="Willing to relocate?">
+            <button type="button" data-value="" title="Leave blank — you'll answer it">–</button>
+            <button type="button" data-value="yes">Yes</button>
+            <button type="button" data-value="no">No</button>
+          </div>
+        </div>
+
+        <div class="qrow">
+          <span class="qlabel">Willing to travel?</span>
+          <div class="seg" id="willingToTravel" role="radiogroup" aria-label="Willing to travel?">
+            <button type="button" data-value="" title="Leave blank — you'll answer it">–</button>
+            <button type="button" data-value="yes">Yes</button>
+            <button type="button" data-value="no">No</button>
+          </div>
+        </div>
+
+        <label>Notice period<input type="text" id="noticePeriod" placeholder="2 weeks" /></label>
+
+        <div class="divider">Work authorisation</div>
+
+        <div class="qrow">
+          <span class="qlabel">Authorized to work?</span>
+          <div class="seg" id="workAuthorized" role="radiogroup" aria-label="Authorized to work?">
+            <button type="button" data-value="" title="Leave blank — you'll answer it">–</button>
+            <button type="button" data-value="yes">Yes</button>
+            <button type="button" data-value="no">No</button>
+          </div>
+        </div>
+
+        <div class="qrow">
+          <span class="qlabel">Need sponsorship?</span>
+          <div class="seg" id="needsSponsorship" role="radiogroup" aria-label="Need sponsorship?">
+            <button type="button" data-value="" title="Leave blank — you'll answer it">–</button>
+            <button type="button" data-value="yes">Yes</button>
+            <button type="button" data-value="no">No</button>
+          </div>
+        </div>
+        <p class="fine">
+          These two are legal declarations, so they're answered <b>only</b> from
+          what you set here — never guessed, never carried over from a previous
+          application. Leave either on <b>–</b> and it stays blank for you to
+          fill in. Criminal history, disability, veteran status and demographic
+          questions are never automated at all.
+        </p>
+
+        <label>
+          Visa status explanation
+          <textarea id="visaExplanation" rows="6"
+                    placeholder="Your visa status, the work authorization it gives you, and what you would need later…"></textarea>
+        </label>
+        <div class="row-actions">
+          <button class="ghost" id="copyVisaBtn">Copy</button>
+          <span class="fine" id="visaCount"></span>
+        </div>
+        <p class="fine">
+          For applications that ask you to <b>explain</b> your visa status in
+          prose rather than Yes/No. This question usually appears on a later page
+          of the application, not on My Information — so when the extension spots
+          it, it offers this text on a pill next to the box and you click to
+          insert it. It is never pasted in automatically, and it never overwrites
+          something you already typed. <b>Copy</b> is the fallback for the times
+          the pill doesn't appear.
         </p>
 
         <button class="primary" id="saveProfileBtn">Save profile</button>
+      </div>
+
+      <!-- ---- learned answers ---- -->
+      <div class="panel" data-panel="answers" hidden>
+        <p class="fine">
+          Questions you've answered by hand, reused when the same question comes
+          up again. Stored locally — just the question and your answer, nothing
+          about which company asked it.
+        </p>
+        <p class="fine">
+          Questions naming a specific company are <b>never</b> stored here. "Have
+          you ever worked for X?" is worked out from your employer list instead,
+          so it stays correct company to company.
+        </p>
+        <div class="divider" id="answersLabel">Remembered</div>
+        <div id="answersList" class="list"></div>
+        <button class="danger" id="forgetAllBtn">Forget all answers</button>
       </div>
 
       <!-- ---- settings ---- -->

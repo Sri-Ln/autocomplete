@@ -5,7 +5,7 @@
  *  VERIFIED against live Workday pages:
  *    createAccount   nvidia.wd5  2026-09-10   all fields + submit
  *    signIn          nvidia.wd5  2026-09-10   all fields + submit
- *    myInformation   ghr.wd1     2026-09-13   all fields + submit + dropdowns
+ *    myInformation   live tenant 2026-09-13   all fields + submit + dropdowns
  *
  *  UNVERIFIED (marked REPLACE_ME, safe to leave):
  *    myInformation.address2 — the harvested tenant's form had no Address Line 2
@@ -30,7 +30,7 @@ AF.sites.workday = {
   id: 'workday',
   label: 'Workday',
 
-  /* Every tenant: ghr.wd1..., nvidia.wd5..., stripe.wd1... One saved login
+  /* Every tenant: acme.wd1..., example.wd5..., other.wd3... One saved login
    * covers all of them — see findCredential() in background/storage.js. */
   hostMatch: /(^|\.)myworkdayjobs\.com$/i,
 
@@ -101,7 +101,7 @@ AF.sites.workday = {
         firstName: '[data-automation-id="formField-legalName--firstName"]',
         lastName: '[data-automation-id="formField-legalName--lastName"]',
         address1: '[data-automation-id="formField-addressLine1"]',
-        address2: '[data-automation-id="REPLACE_ME_formField-addressLine2"]', // TODO: absent on ghr.wd1 — verify on a tenant that shows Line 2
+        address2: '[data-automation-id="REPLACE_ME_formField-addressLine2"]', // TODO: absent on the tenant harvested so far — verify on one that shows Line 2
         city: '[data-automation-id="formField-city"]',
         zip: '[data-automation-id="formField-postalCode"]',
         phone: '[data-automation-id="formField-phoneNumber"]',
@@ -125,25 +125,56 @@ AF.sites.workday = {
        * Run by customFill below, after the text pass. */
       pickers: {
         source: {
-          selector: '[data-automation-id="formField-source"]',
+          /* Alternatives, tried in order, then a label-text fallback. One
+           * tenant reported "field not on page" for formField-source while the
+           * question was plainly on screen under a different id. */
+          selector: [
+            '[data-automation-id="formField-source"]',
+            '[data-automation-id="formField-sourceProspect"]',
+            '[data-automation-id="sourceSection"]',
+          ],
+          labelFallback: 'How Did You Hear About Us',
           kind: 'multiselect',
           label: 'How Did You Hear About Us',
-          required: true,
           value: (ctx) => ctx.profile.source,
         },
         state: {
-          selector: '[data-automation-id="formField-countryRegion"]',
+          selector: [
+            '[data-automation-id="formField-countryRegion"]',
+            '[data-automation-id="formField-region"]',
+            '[data-automation-id="formField-state"]',
+          ],
+          labelFallback: 'State',
           kind: 'listbox',
           label: 'State',
-          // Expand "MA" first: the dropdown lists full names, and a two-letter
-          // query prefix-matches Maine, Maryland and Massachusetts alike.
+          // Expand the abbreviation first: the dropdown lists full names, and a
+          // two-letter query prefix-matches several states at once.
           value: (ctx) => AF.expandUsState(ctx.profile.state),
         },
         country: {
-          selector: '[data-automation-id="formField-country"]',
+          selector: [
+            '[data-automation-id="formField-country"]',
+            '[data-automation-id="formField-addressCountry"]',
+          ],
+          labelFallback: 'Country',
           kind: 'listbox',
           label: 'Country',
-          value: (ctx) => ctx.profile.country,
+          // "USA" / "US" / "U.S." all have to reach "United States of America".
+          value: (ctx) => AF.expandCountry(ctx.profile.country),
+        },
+        phoneCountryCode: {
+          /* Required, and a multi-select rather than a listbox. Usually arrives
+           * prefilled, but on a blank application it is one of the fields that
+           * silently blocks submit — and being unlabelled, it was the one
+           * reporting itself as just "text". */
+          selector: ['[data-automation-id="formField-countryPhoneCode"]'],
+          labelFallback: 'Country Phone Code',
+          kind: 'multiselect',
+          label: 'Country Phone Code',
+          /* The options read "United States of America (+1)", so the plain
+           * country name is a substring match and the dialling code needs no
+           * table of its own. */
+          value: (ctx) => AF.expandCountry(ctx.profile.country),
         },
       },
 
@@ -167,7 +198,7 @@ AF.sites.workday = {
 
           let result;
           try {
-            result = await fn(picker.selector, wanted);
+            result = await fn(picker.selector, wanted, picker.labelFallback);
           } catch (err) {
             AF.log(`picker ${key} threw`, err);
             result = { ok: false, reason: String(err?.message ?? err) };
@@ -175,12 +206,15 @@ AF.sites.workday = {
 
           if (result.ok) {
             (result.already ? report.already : report.filled).push(key);
-          } else if (result.notPresent && !picker.required) {
-            /* The field simply isn't on this tenant's form. Not every Workday
-             * instance shows Country, or a Suffix, or Address Line 2. Treating
-             * an absent optional field as a failure would block submit forever
-             * on those tenants — caught by the harness, which renders no
-             * Country field. */
+          } else if (result.notPresent) {
+            /* Genuinely absent from this tenant's form — skip, never block.
+             *
+             * This used to block when the picker was marked required, on the
+             * reasoning that a required question must be answered. That was
+             * wrong twice over: tenants render different subsets of this form,
+             * and if the field really is present and really is required,
+             * unknownRequiredEmpty() in guards.js catches it anyway by reading
+             * the DOM. Blocking here only ever produced false refusals. */
             report.skipped.push(key);
           } else {
             report.failed.push(key);
@@ -211,18 +245,55 @@ AF.sites.workday = {
    * would pick nonsense.
    * ==================================================================== */
 
-  /** The popup a trigger opened, or null. */
-  findOpenPopup(trigger) {
+  /** Every listbox currently on screen. Used to diff before/after a click. */
+  visiblePopups() {
+    return [...document.querySelectorAll('[role="listbox"], [data-automation-id="promptOptions"]')]
+      .filter((el) => el.getClientRects().length);
+  },
+
+  /**
+   * The popup THIS trigger opened.
+   *
+   * @param before  popups that were already on screen before the click
+   *
+   * The old fallback — "any visible listbox, there's only one open at a time" —
+   * was wrong. Workday's phone Country Code field is a multi-select whose
+   * listbox is present and measurable even when closed, so State and Country
+   * both resolved to it and reported
+   *   no option matching "Massachusetts" — saw: United States of America (+1)
+   * while the real state list sat untouched two elements away.
+   *
+   * Three strategies, strictest first:
+   *   1. aria-controls — authoritative when Workday sets it
+   *   2. a popup that appeared since the click — reliable and widget-agnostic
+   *   3. a popup inside the same formField wrapper as the trigger
+   * There is deliberately no "just grab any listbox" tier.
+   */
+  findOpenPopup(trigger, before = []) {
     const controls = trigger.getAttribute('aria-controls');
     if (controls) {
       const byId = document.getElementById(controls);
       if (byId && byId.getClientRects().length) return byId;
     }
-    // Fall back to any visible listbox — there is only ever one open at a time.
-    for (const lb of document.querySelectorAll('[role="listbox"]')) {
-      if (lb.getClientRects().length) return lb;
+
+    const beforeSet = new Set(before);
+    const appeared = AF.sites.workday.visiblePopups().filter((el) => !beforeSet.has(el));
+    if (appeared.length === 1) return appeared[0];
+
+    /* Workday renders some popups as a sibling of the field rather than inside
+     * it, so check the field wrapper and then its parent — but never wider. */
+    const wrapper = trigger.closest('[data-automation-id^="formField-"]');
+    if (wrapper) {
+      for (const scope of [wrapper, wrapper.parentElement].filter(Boolean)) {
+        const own = [...scope.querySelectorAll('[role="listbox"]')].filter(
+          (el) => el.getClientRects().length
+        );
+        if (own.length) return own[0];
+      }
     }
-    return null;
+
+    // More than one appeared and none is attributable — refuse rather than guess.
+    return appeared.length ? appeared[0] : null;
   },
 
   /** Real, selectable options inside a popup. */
@@ -242,6 +313,19 @@ AF.sites.workday = {
     return AF.normalizeText(shown).includes(AF.normalizeText(wanted));
   },
 
+  /**
+   * Locate a widget's wrapper: try each selector in turn, then fall back to
+   * finding it by its visible label text.
+   */
+  resolveWrapper(selector, labelFallback) {
+    for (const sel of [].concat(selector)) {
+      if (AF.isPlaceholder(sel)) continue;
+      const hit = document.querySelector(sel);
+      if (hit) return hit;
+    }
+    return labelFallback ? AF.findFieldByLabel(labelFallback) : null;
+  },
+
   async closePopup() {
     document.activeElement?.dispatchEvent?.(
       new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })
@@ -254,11 +338,10 @@ AF.sites.workday = {
    * Button that opens a listbox — State, Country, Suffix, Phone Device Type.
    * Returns { ok, already?, reason?, sample? }.
    */
-  async pickFromListbox(selector, wanted) {
+  async pickFromListbox(selector, wanted, labelFallback) {
     const W = AF.sites.workday;
-    const wrap = document.querySelector(selector);
+    const wrap = W.resolveWrapper(selector, labelFallback);
     // notPresent, not a failure: tenants render different subsets of this form.
-    // customFill decides whether an absent field matters, based on `required`.
     if (!wrap) return { ok: false, notPresent: true, reason: 'field not on page' };
 
     const trigger = wrap.matches('button') ? wrap : wrap.querySelector('button');
@@ -266,8 +349,10 @@ AF.sites.workday = {
 
     if (W.triggerShows(trigger, wanted)) return { ok: true, already: true };
 
+    // Snapshot first, so we can tell which popup this click actually opened.
+    const before = W.visiblePopups();
     trigger.click();
-    const popup = await AF.waitFor(() => W.findOpenPopup(trigger), 2500);
+    const popup = await AF.waitFor(() => W.findOpenPopup(trigger, before), 2500);
     if (!popup) return { ok: false, reason: 'dropdown did not open' };
 
     const options = W.optionsIn(popup);
@@ -297,9 +382,9 @@ AF.sites.workday = {
    * typing finds nothing we fall back to browsing, then to drilling one level
    * into the most promising category.
    */
-  async pickFromMultiselect(selector, wanted) {
+  async pickFromMultiselect(selector, wanted, labelFallback) {
     const W = AF.sites.workday;
-    const wrap = document.querySelector(selector);
+    const wrap = W.resolveWrapper(selector, labelFallback);
     if (!wrap) return { ok: false, notPresent: true, reason: 'field not on page' };
 
     /* Check "already answered" BEFORE looking for the input.
@@ -326,13 +411,13 @@ AF.sites.workday = {
     let lastSeen = [];
 
     for (const query of queries) {
+      const before = W.visiblePopups();
       input.focus();
       input.click();
 
-      if (query) AF.setNativeValue(input, query, { blur: false });
-      else AF.setNativeValue(input, '', { blur: false });
+      AF.setNativeValue(input, query ?? '', { blur: false });
 
-      const popup = await AF.waitFor(() => W.findOpenPopup(input), 2500);
+      const popup = await AF.waitFor(() => W.findOpenPopup(input, before), 2500);
       if (!popup) continue;
 
       await new Promise((r) => setTimeout(r, 400)); // let the filter settle
@@ -352,7 +437,7 @@ AF.sites.workday = {
           options[category.index].click();
           await new Promise((r) => setTimeout(r, 600));
 
-          const inner = W.optionsIn(W.findOpenPopup(input) ?? popup);
+          const inner = W.optionsIn(W.findOpenPopup(input, before) ?? popup);
           const innerTexts = inner.map((o) => o.textContent.trim());
           const innerHit = AF.bestMatch(innerTexts, candidates);
           if (innerHit) {
