@@ -79,6 +79,47 @@ check('no employment history -> declines', noHistory.answer, null);
 check('and asks for what it needs', noHistory.reason,
   'needs your "employers" list to answer this for "Vertex Dynamics"');
 
+/* ================= the live Acme Insurance question ================= */
+
+/* Reported from a real application. Three things about this one string broke
+ * the employer rule at once: the company name starts with "The", the question
+ * carries a parenthetical listing affiliates, and the <legend> drags in the
+ * required-marker asterisk from an aria-hidden <abbr>. */
+const ACME_INS =
+  'Have you previously been employed by Acme Insurance (including any company affiliated with or acquired by Acme Insurance)?*';
+
+const acmeNo = ask(ACME_INS);
+check('Acme Insurance, not an employer -> No', acmeNo.answer, 'No');
+check('and it is derived', acmeNo.source, 'derived');
+/* The parenthetical is a definition of the company, not part of its name. If it
+ * leaked in, the reason line below would read back as one absurd company. */
+check('parenthetical does not leak into the company name', acmeNo.reason,
+  '"Acme Insurance" is not in your employment history');
+
+check('Acme Insurance in the history -> Yes',
+  ask(ACME_INS, { ...PROFILE, employers: ['Acme Insurance', 'Initech'] }).answer, 'Yes');
+check('fuzzy across the legal suffix too',
+  ask(ACME_INS, { ...PROFILE, employers: ['Acme Insurance Holdings, Inc.'] }).answer,
+  'Yes');
+
+/* A name mentioned only inside the parenthetical is an affiliate of the company
+ * being asked about, not the company being asked about. Letting it through would
+ * answer Yes to an employer you never worked for. */
+check('a company named only in the parenthetical does not force a Yes',
+  ask('Have you previously been employed by Globex (Acme Corp)?').answer, 'No');
+
+/* The asterisk must not reach any rule, not just this one. */
+check('asterisked sponsorship still resolves',
+  ask('Will you now or in the future require sponsorship?*').answer, 'No');
+check('asterisked over-18 still resolves',
+  ask('Are you at least 18 years of age?*').answer, 'Yes');
+
+/* Company-specific, so the derived-not-remembered guarantee has to hold here. */
+check('Acme Insurance question is NOT recallable',
+  AF.questions.signature(ACME_INS).recallable, false);
+check('remember() refuses the Acme Insurance question',
+  AF.questions.remember({}, ACME_INS, 'No').stored, false);
+
 /* ================= sensitive: never answered ================= */
 
 const sensitive = [

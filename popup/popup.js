@@ -10,8 +10,8 @@ const $ = (id) => document.getElementById(id);
 const send = (msg) => chrome.runtime.sendMessage(msg);
 
 const PROFILE_FIELDS = [
-  'firstName', 'lastName', 'phone', 'address1', 'address2',
-  'city', 'state', 'zip', 'country', 'source', 'noticePeriod',
+  'firstName', 'lastName', 'phone', 'phoneExtension', 'address1', 'address2',
+  'city', 'state', 'zip', 'county', 'country', 'source', 'noticePeriod',
   'visaExplanation',
 ];
 

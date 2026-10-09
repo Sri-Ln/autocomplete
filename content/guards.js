@@ -74,9 +74,25 @@ AF.guards = {
    * Did everything we tried to write actually land? Re-reads the DOM rather
    * than trusting the fill report, because React can revert a value after the
    * fact if it disagreed with it.
+   *
+   * A field that is NOT ON THE PAGE is not the same as one sitting there empty,
+   * and the two used to be reported identically. Tenants render different
+   * subsets of the same form — the Create Account terms checkbox is absent
+   * entirely on some of them — so blocking on an absent field refuses to submit
+   * a form that is, as far as the page is concerned, complete. There is nothing
+   * the user can do about it either: the field they are told to fill does not
+   * exist.
+   *
+   * Absent fields therefore fall through to unknownRequiredEmpty(), which reads
+   * the DOM instead of our selector map. That is the guard that actually holds
+   * the line: if the field really is on the page and really is required — our
+   * selector having rotted — it is found there and named, and submit is still
+   * blocked. What is dropped here is only the case where the field is genuinely
+   * not on this tenant's form.
    */
   allFieldsLanded(fieldMap, values, optional = []) {
     const empty = [];
+    const absent = [];
     const isOptional = new Set(optional);
 
     for (const [key, selector] of Object.entries(fieldMap)) {
@@ -89,7 +105,7 @@ AF.guards = {
 
       const el = AF.resolveField(selector);
       if (!el) {
-        empty.push(key);
+        absent.push(key);
         continue;
       }
       if (el.type === 'checkbox') {
@@ -98,6 +114,11 @@ AF.guards = {
         empty.push(key);
       }
     }
+
+    /* Worth knowing when a selector stops matching, even though it no longer
+     * blocks: a field that quietly vanishes from every tenant is Workday having
+     * renamed it. */
+    if (absent.length) AF.log('not on this page, skipped:', absent.join(', '));
 
     return empty.length
       ? `Not submitting — these fields are still empty: ${empty.join(', ')}.`

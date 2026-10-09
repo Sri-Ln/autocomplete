@@ -173,6 +173,31 @@ AF.careerSiteCandidates = function (hostname = location.hostname) {
 };
 
 /**
+ * Does this option name the tenant?
+ *
+ * The hostname squashes the company name into one label ("acmeinsurance") while
+ * the option spells it out ("Acme Insurance Career Section"), and nothing in
+ * scoreMatch connects those: the tokens differ, and the substring test fails on
+ * the space. Comparing with the spaces removed is what makes a tenant-specific
+ * entry recognisable as *this* company's — which is the whole question when
+ * picking between the siblings inside a "Career Site" category.
+ *
+ * Four characters minimum. A two- or three-letter slug is a substring of far
+ * too much ordinary English — "ge" alone would claim "General Electric",
+ * "Agency Referral" and "College Career Fair" with equal confidence.
+ */
+AF.mentionsTenant = function (text, hostname = location.hostname) {
+  const tenant = AF.tenantFromHostname(hostname);
+  if (!tenant) return false;
+
+  const squash = (s) => AF.normalizeText(s).replace(/\s+/g, '');
+  const needle = squash(tenant);
+  if (needle.length < 4) return false;
+
+  return squash(text).includes(needle);
+};
+
+/**
  * Category names worth drilling into when the answer isn't at the top level.
  * Workday nests sources: "Job Sites" → "<Company> Career Site".
  */
