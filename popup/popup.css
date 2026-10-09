@@ -585,3 +585,10 @@ details.per-skill[open] summary {
   margin-bottom: 4px;
 }
 
+/* The Backup buttons sit left, at the start of their row, and with the
+ * panel's ordinary gap — they are an action of their own, not a strip
+ * belonging to a field above. */
+.row-actions.start {
+  justify-content: flex-start;
+  margin-top: 0;
+}

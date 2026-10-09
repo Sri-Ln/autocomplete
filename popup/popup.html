@@ -409,12 +409,30 @@
           </span>
         </label>
 
+        <div class="divider">Backup</div>
+        <p class="fine">
+          Save your profile, experience, remembered answers and per-company picks
+          to a file, and load them back after reinstalling. Saved <b>passwords
+          are not included</b> — re-enter your login on the Login tab.
+        </p>
+        <div class="row-actions start">
+          <button class="ghost" id="exportBtn" type="button">Export to file</button>
+          <button class="ghost" id="importBtn" type="button">Import from file</button>
+          <input type="file" id="importFile" accept="application/json,.json" hidden />
+        </div>
+        <p class="fine">
+          The file holds your personal details in plain text. Keep it somewhere
+          private — <b>not</b> inside the extension's folder, where it could end
+          up in git.
+        </p>
+
         <div class="divider">About the passphrase</div>
         <p class="fine">
           Saved passwords are encrypted with AES-GCM; the key is derived from your
           passphrase and held in memory only, so it disappears when Chrome closes.
-          Your profile details are stored in plain text. CAPTCHAs and email
-          verification are never automated.
+          Your profile details are stored in plain text. CAPTCHAs are never
+          automated, and a verification link found in Gmail is shown to you,
+          never opened.
         </p>
 
         <div class="divider danger-label">Danger</div>

@@ -982,6 +982,158 @@ $('wipeBtn').addEventListener('click', async () => {
 });
 
 /* ------------------------------------------------------------------ */
+/* backup — export to a file, import from one                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Everything you typed in, in one JSON file, so a reinstall is one click.
+ *
+ * Why it is needed at all: chrome.storage belongs to the extension's ID.
+ * Reloading an unpacked extension keeps it, but removing it and loading it
+ * again — or loading a second copy from another folder — is a NEW extension
+ * with empty storage, and the profile has to be typed in again.
+ *
+ * What is deliberately LEFT OUT: the vault. Passwords are encrypted with a key
+ * derived from your passphrase and a salt stored next to them, and a backup
+ * that carried them would be a file whose only protection is a passphrase
+ * someone could try offline as often as they liked. Re-entering one login is
+ * a smaller cost than that. The Gmail connection is Chrome's, not ours, so it
+ * is not here either.
+ *
+ * Import goes through the same saveProfile / saveAnswers / savePick /
+ * saveSettings messages the popup always uses, so the worker's whitelisting
+ * applies to a file exactly as it does to typing: an unknown key in the file
+ * is dropped, never stored.
+ */
+const BACKUP_FORMAT = 'autocomplete-backup';
+const BACKUP_VERSION = 1;
+
+async function buildBackup() {
+  const [profile, answers, picks, settings] = await Promise.all([
+    send({ type: 'getProfile' }),
+    send({ type: 'getAnswers' }),
+    send({ type: 'listPicks' }),
+    send({ type: 'getSettings' }),
+  ]);
+  return {
+    format: BACKUP_FORMAT,
+    version: BACKUP_VERSION,
+    exportedAt: new Date().toISOString(),
+    profile: profile?.profile ?? {},
+    answers: answers?.answers ?? {},
+    picks: picks?.picks ?? {},
+    settings: settings?.settings ?? {},
+  };
+}
+
+/**
+ * A file's text → the parts worth importing, or { error }.
+ *
+ * Strict about the envelope and loose about the rest: a file that is not one
+ * of ours is refused outright (importing someone's random JSON as a profile
+ * would silently blank every field), while inside it each part is optional
+ * and shape-checked, so a backup from before a field existed still loads.
+ */
+function parseBackup(text) {
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    return { error: 'That file is not valid JSON.' };
+  }
+  if (data?.format !== BACKUP_FORMAT) return { error: 'That is not an Autocomplete backup file.' };
+  if (!(data.version <= BACKUP_VERSION)) {
+    return { error: 'That backup is from a newer version of the extension.' };
+  }
+
+  const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v);
+  const out = {};
+  if (isObj(data.profile)) out.profile = data.profile;
+
+  if (isObj(data.answers)) {
+    out.answers = Object.fromEntries(
+      Object.entries(data.answers).filter(([, e]) => isObj(e) && typeof e.answer === 'string')
+    );
+  }
+
+  if (isObj(data.picks)) {
+    out.picks = [];
+    for (const [host, keys] of Object.entries(data.picks)) {
+      if (!isObj(keys)) continue;
+      for (const [key, entry] of Object.entries(keys)) {
+        const value = isObj(entry) ? entry.value : entry;
+        if (typeof value === 'string' && value.trim()) out.picks.push({ host, key, value });
+      }
+    }
+  }
+
+  if (isObj(data.settings)) {
+    out.settings = {};
+    for (const k of ['autoSubmit', 'showWidget']) {
+      if (typeof data.settings[k] === 'boolean') out.settings[k] = data.settings[k];
+    }
+  }
+  return out;
+}
+
+async function applyBackup(parts) {
+  if (parts.profile) await send({ type: 'saveProfile', profile: parts.profile });
+  // Merged over what is here: an answer learned since the export is kept.
+  if (parts.answers) {
+    const current = (await send({ type: 'getAnswers' }))?.answers ?? {};
+    await send({ type: 'saveAnswers', answers: { ...current, ...parts.answers } });
+  }
+  for (const p of parts.picks ?? []) {
+    await send({ type: 'savePick', hostname: p.host, key: p.key, value: p.value });
+  }
+  if (parts.settings && Object.keys(parts.settings).length) {
+    await send({ type: 'saveSettings', patch: parts.settings });
+  }
+}
+
+$('exportBtn').addEventListener('click', async () => {
+  const backup = await buildBackup();
+  const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `autocomplete-backup-${backup.exportedAt.slice(0, 10)}.json`;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  toast('Exported. Keep the file somewhere private.', 'ok');
+});
+
+$('importBtn').addEventListener('click', () => $('importFile').click());
+
+$('importFile').addEventListener('change', async (e) => {
+  const file = e.target.files?.[0];
+  e.target.value = ''; // so choosing the same file again still fires
+  if (!file) return;
+
+  const parts = parseBackup(await file.text());
+  if (parts.error) return toast(parts.error, 'err');
+
+  if (!confirm('Replace your profile and experience with the ones in this file? ' +
+               'Remembered answers and picks are merged in. Saved logins are not touched.')) {
+    return;
+  }
+
+  await applyBackup(parts);
+  await broadcast({ type: 'profileChanged' });
+  await boot(); // repaint every tab from storage
+  toast('Imported.', 'ok');
+});
+
+/* Test hooks, alongside __afBoot below. */
+window.__afBackup = { buildBackup, parseBackup, applyBackup };
+
+/* Test hook: test/popup-harness.html drives this file, not a copy of it, and
+ * re-runs boot() to stand in for reopening the popup. */
+window.__afBoot = boot;
+
+/* ------------------------------------------------------------------ */
 /* fill this page                                                     */
 /* ------------------------------------------------------------------ */
 
