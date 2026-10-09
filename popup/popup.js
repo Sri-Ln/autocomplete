@@ -145,8 +145,21 @@ for (const tab of document.querySelectorAll('.tab')) {
 /* profile                                                            */
 /* ------------------------------------------------------------------ */
 
+/**
+ * Last profile known to be in storage.
+ *
+ * The visa box saves itself without the rest of the form (see below), and
+ * saveProfile writes the whole object — so it needs a base to patch that is not
+ * "whatever is currently typed into the other boxes". The popup is the only
+ * writer, so a cache taken at load stays correct for its lifetime.
+ */
+let storedProfile = {};
+
 async function loadProfile() {
   const { profile } = await send({ type: 'getProfile' });
+  storedProfile = profile;
+  visaSaved = profile.visaExplanation ?? '';
+
   for (const key of PROFILE_FIELDS) $(key).value = profile[key] ?? '';
   for (const key of PROFILE_LIST_FIELDS) {
     $(key).value = (profile[key] ?? []).join('\n');
@@ -185,20 +198,85 @@ $('copyVisaBtn').addEventListener('click', async () => {
   }
 });
 
-/* An unsaved edit is the likeliest reason the pill offers stale text, so show
- * the count and mark the field dirty until it is saved. */
-function paintVisaCount() {
-  const text = $('visaExplanation').value.trim();
-  $('visaCount').textContent = text ? `${text.length} characters` : '';
+/**
+ * The visa box saves itself.
+ *
+ * Every other field on this tab is a line you finish in a second; this one is a
+ * paragraph you write, read back, and then close the popup on. There is no page
+ * to navigate away from and no "are you sure" — the popup just vanishes, and an
+ * unclicked *Save profile* takes the paragraph with it. So it behaves like the
+ * Settings toggles, which have always written on change.
+ *
+ * It saves ONLY itself: a half-typed name in another box is not an instruction
+ * to save that name, so the patch goes onto `storedProfile`, not onto the form.
+ */
+const VISA_DEBOUNCE_MS = 500;
+
+let visaTimer;
+let visaSaved = '';             // the value currently in storage
+let visaQueue = Promise.resolve(); // serialises saves; typing outruns storage
+
+/** state: 'saved' | 'unsaved' | 'saving' — inferred from the value if omitted. */
+function paintVisaCount(state) {
+  const box = $('visaExplanation');
+  const text = box.value.trim();
+  const status = state ?? (box.value === visaSaved ? 'saved' : 'unsaved');
+  $('visaCount').textContent = text
+    ? `${text.length} characters · ${status === 'saving' ? 'saving…' : status}`
+    : '';
+}
+
+/**
+ * Write the visa text now, if it differs from what is stored.
+ *
+ * Called from the close handlers too, where nothing after the `send` will run —
+ * the popup's JS context is already going away. That is fine: the message has
+ * left for the service worker by then, and the reply is only a toast.
+ */
+function flushVisa() {
+  clearTimeout(visaTimer);
+
+  const text = $('visaExplanation').value;
+  if (text === visaSaved) return;
+
+  paintVisaCount('saving');
+  const profile = { ...storedProfile, visaExplanation: text };
+
+  visaQueue = visaQueue
+    .then(async () => {
+      const res = await send({ type: 'saveProfile', profile });
+      if (!res?.ok) {
+        paintVisaCount('unsaved');
+        return toast(res?.error ?? 'Could not save the explanation.', 'err');
+      }
+      storedProfile = profile;
+      visaSaved = text;
+      paintVisaCount();
+      // Open tabs cache the profile for the pill; tell them it moved.
+      await broadcast({ type: 'profileChanged' });
+    })
+    .catch(() => {});
 }
 
 $('visaExplanation').addEventListener('input', () => {
   paintVisaCount();
-  $('visaCount').textContent += ' · unsaved';
+  clearTimeout(visaTimer);
+  visaTimer = setTimeout(flushVisa, VISA_DEBOUNCE_MS);
 });
 
+/* Leaving the field is a finished thought — don't wait out the debounce. */
+$('visaExplanation').addEventListener('change', flushVisa);
+
+/* Closing the popup. Both events are listened for because which one a popup
+ * gets on dismissal is not something to bet a paragraph on. */
+window.addEventListener('pagehide', flushVisa);
+document.addEventListener('visibilitychange', flushVisa);
+
 $('saveProfileBtn').addEventListener('click', async () => {
-  const profile = {};
+  /* Starts from what is stored, not from nothing. saveProfile writes the whole
+   * object and the worker whitelists every known key, so a key missing here is
+   * a key WIPED — and the Experience tab's fields are not on this tab. */
+  const profile = { ...storedProfile };
   for (const key of PROFILE_FIELDS) profile[key] = $(key).value;
   for (const key of PROFILE_SEG_FIELDS) profile[key] = segValue(key);
   for (const key of PROFILE_LIST_FIELDS) {
@@ -208,10 +286,15 @@ $('saveProfileBtn').addEventListener('click', async () => {
       .filter(Boolean);
   }
 
+  // This writes the visa text too, so a pending autosave has nothing left to do.
+  clearTimeout(visaTimer);
+
   const res = await send({ type: 'saveProfile', profile });
   toast(res.ok ? 'Profile saved.' : (res.error ?? 'Save failed.'), res.ok ? 'ok' : 'err');
 
   if (res.ok) {
+    storedProfile = profile;
+    visaSaved = profile.visaExplanation;
     paintVisaCount(); // clears the "unsaved" marker
     // Open tabs cache the profile for the pill; tell them it moved.
     await broadcast({ type: 'profileChanged' });
