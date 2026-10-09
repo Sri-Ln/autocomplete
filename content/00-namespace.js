@@ -47,11 +47,39 @@ AF.waitFor = function (fn, timeoutMs = 2000, intervalMs = 50) {
   });
 };
 
-/** Debounce, for the MutationObserver in main.js. */
-AF.debounce = function (fn, ms) {
+/**
+ * Debounce, for the MutationObserver in main.js.
+ *
+ * With a maxWait, and that part is not optional here. A plain debounce clears
+ * its timer on every call, so a page that mutates faster than the delay
+ * starves it completely: measured against a DOM changing every 50ms, the
+ * observer fired 101 times in five seconds and the callback ran zero times.
+ * Workday pages have spinners, live regions and animations, so this is the
+ * normal case, not a pathological one — and the callback being starved means
+ * the widget stops noticing that the page moved on, which looks exactly like
+ * the extension having died.
+ *
+ * So: quiet pages still get the debounce, and a page that never goes quiet
+ * still gets a run every `maxWaitMs`.
+ */
+AF.debounce = function (fn, ms, maxWaitMs = ms * 6) {
   let timer;
+  let firstCallAt = 0;
+
   return (...args) => {
+    const now = Date.now();
+    if (!firstCallAt) firstCallAt = now;
+
+    const run = () => {
+      clearTimeout(timer);
+      timer = undefined;
+      firstCallAt = 0;
+      fn(...args);
+    };
+
+    if (now - firstCallAt >= maxWaitMs) return run();
+
     clearTimeout(timer);
-    timer = setTimeout(() => fn(...args), ms);
+    timer = setTimeout(run, Math.min(ms, firstCallAt + maxWaitMs - now));
   };
 };
