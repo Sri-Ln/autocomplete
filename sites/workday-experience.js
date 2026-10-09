@@ -331,6 +331,13 @@
    * Returns { ok, text?, reason?, texts } — `texts` being every option seen,
    * which the ladder logic uses to decide whether a second pass is worth it.
    */
+  /* Prompts already seen to search only on Enter, by field id. Learned on the
+   * first search of a run, so every later one presses Enter straight away
+   * instead of first waiting to see whether typing alone searches — on a
+   * Skills list that wait was paid once per skill. */
+  const searchesOnEnter = new Set();
+  const fieldKey = (wrap) => wrap?.getAttribute('data-automation-id') ?? '';
+
   async function promptPick(wrap, query, match) {
     const input = promptInput(wrap);
     if (!input) {
@@ -355,13 +362,26 @@
      * Seen live: Field of Study opens on an alphabetical default list and
      * searches only on Enter. The wanted option can sit in that default list
      * (an early-alphabet name does), so it was found and clicked there — and a click
-     * on a default-list row selects nothing. Rows are believed only once most
-     * of the list carries a word of the query. */
-    const words = AF.normalizeText(query).split(' ').filter((w) => w.length >= 3 && !/^(and|the|for)$/.test(w));
+     * on a default-list row selects nothing. Rows are believed once most of
+     * the list carries a word of the query, or — after Enter — once the list
+     * is no longer the one that was showing when Enter was pressed: Workday's
+     * search returns loose relatives ("Codex" brings "Building Codes", "Code
+     * Development"), so a word count alone rejected real results. Short
+     * queries ("C#", "Go", "AI") keep their short words. */
+    const allWords = AF.normalizeText(query).split(' ').filter(Boolean);
+    const longWords = allWords.filter((w) => w.length >= 3 && !/^(and|the|for)$/.test(w));
+    const words = longWords.length ? longWords : allWords;
+    let baseline = null; // the list's text when Enter was pressed
     const isResults = (texts) => {
-      if (!texts.length || !words.length) return false;
+      if (!texts.length) return false;
+      if (baseline !== null && texts.join('\n') !== baseline) return true;
+      if (!words.length) return false;
       const relevant = texts.filter((t) => words.some((w) => AF.normalizeText(t).includes(w))).length;
       return relevant / texts.length >= 0.5;
+    };
+    const listNow = () => {
+      const popup = results();
+      return popup ? W.optionsIn(popup).map((o) => W.optionText(o)).join('\n') : '';
     };
 
     /* Poll the open list for up to `ms`. Done when the results show a match,
@@ -389,12 +409,15 @@
     input.click();
     AF.setNativeValue(input, query, { blur: false });
 
-    let seen = await read(1200);
+    const enterOnly = searchesOnEnter.has(fieldKey(wrap));
+    let seen = enterOnly ? { hit: null, answered: false } : await read(1200);
     let how = 'typing';
 
     if (!seen.hit && !seen.answered) {
       /* Typing did not search. This prompt searches on Enter. */
       how = 'Enter';
+      searchesOnEnter.add(fieldKey(wrap));
+      baseline = listNow();
       pressEnter(input);
       await AF.waitFor(() => pills(wrap).length !== pillsBefore.length || null, 400);
 
@@ -425,15 +448,33 @@
       return { ok: false, reason: texts.length ? `nothing matching "${query}"` : `no results for "${query}"`, texts };
     }
 
-    if (!W.clickRow(rows[hit.index])) {
+    /* Rows with a checkbox (Skills) select through the checkbox: a click on
+     * the row itself was seen live to do nothing, while the same row's box
+     * ticks it. Rows without one are clicked as before. */
+    const row = rows[hit.index];
+    const box = row?.querySelector('input[type="checkbox"]');
+    if (!W.clickRow(box?.isConnected ? box : row)) {
       await W.closePopup();
       return { ok: false, reason: 'the option list moved under us', texts };
     }
 
-    const landed = await AF.waitFor(
-      () => pills(wrap).find((t) => !pillsBefore.includes(t) && X.promptScore(t, hit.text) >= 0.97),
-      1500
-    );
+    const newPill = () =>
+      pills(wrap).find((t) => !pillsBefore.includes(t) && X.promptScore(t, hit.text) >= 0.97) ?? null;
+    let landed = await AF.waitFor(() => newPill() || (box?.checked ? 'ticked' : null), 1500);
+    if (landed === 'ticked') {
+      // Ticked in the list; some prompts only add the pill once the list closes.
+      landed = newPill() ?? (await (async () => {
+        await W.closePopup();
+        return AF.waitFor(newPill, 1200);
+      })());
+    }
+    if (!landed) {
+      // What the click hit and what the field holds now, to see why it did not take.
+      AF.log(`clicked "${hit.text}" but no new pill — row <${row?.tagName?.toLowerCase()}` +
+        ` role=${row?.getAttribute('role')} id=${row?.getAttribute('data-automation-id')}` +
+        `${row?.querySelector('input[type="checkbox"]') ? ' has-checkbox' : ''}>` +
+        ` · pills before: ${pillsBefore.join(' | ') || 'none'} · after: ${pills(wrap).join(' | ') || 'none'}`);
+    }
     clearQuery(promptInput(wrap));
     await W.closePopup();
     return landed
@@ -893,6 +934,22 @@
    * keep or delete; the only pill this ever takes away is one Enter committed
    * on its own that was not what we searched for (see promptPick).
    */
+  /**
+   * A skill's option: its exact name, or the name plus a parenthetical
+   * ("Java (Programming Language)"). Never a longer name — "React" is not
+   * "React VR", "AWS" is not "AWS Tools". A skill with symbols in it (C#, C++,
+   * .NET) must match its text as written, because normalising strips them and
+   * "C#" would otherwise equal "C".
+   */
+  function skillMatch(texts, skill) {
+    const raw = (t) => String(t).trim().toLowerCase().replace(/\s+/g, ' ');
+    const want = raw(skill);
+    const i = texts.findIndex((t) => raw(t) === want);
+    if (i >= 0) return { index: i, text: texts[i], score: 1 };
+    if (/[^a-z0-9\s]/i.test(skill)) return null;
+    return X.bestPromptOption(texts, skill, { min: 0.97 });
+  }
+
   async function fillSkills({ profile }) {
     const report = newReport('Skills');
     const skills = (profile?.skills ?? []).map((s) => String(s).trim()).filter(Boolean);
@@ -911,7 +968,7 @@
         report.already.push(skill);
         continue;
       }
-      const res = await promptPick(wrap, skill, (texts) => X.bestPromptOption(texts, skill));
+      const res = await promptPick(wrap, skill, (texts) => skillMatch(texts, skill));
       if (res.ok) {
         report.filled.push(X.promptScore(res.text, skill) >= 1 ? skill : `${skill} → "${res.text}"`);
       } else {
