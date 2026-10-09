@@ -7,7 +7,10 @@
  * (position + z-index) and nothing else.
  *
  * The widget is pure UI — it renders state and reports clicks. Every decision
- * about what to fill and whether to submit lives in main.js.
+ * about what to fill and whether to submit lives in main.js. The one thing it
+ * does on its own is Copy on the activation link, because the fallback for a
+ * refused clipboard is to select the address, and only code inside this shadow
+ * root can do that.
  *
  * It is also draggable — by its header strip when expanded, by the bubble
  * itself when collapsed; see the "dragging" section below.
@@ -142,6 +145,42 @@ AF.widget = (() => {
     .msg.warn { background: #2b2314; color: #f0c07a; }
     .msg.err  { background: #2b1717; color: #f09a9a; }
 
+    /* The activation link, when the Gmail lookup has found one. Same palette as
+       the message box above it — a recessed well inside the body, not a second
+       kind of panel. */
+    .link {
+      display: flex; flex-direction: column; gap: 8px;
+      padding: 10px;
+      border-radius: 8px;
+      background: #0f0f15; border: 1px solid #2c2c38;
+    }
+    .link-title { font-size: 11.5px; font-weight: 600; color: #b9b9c9; }
+    .link-url {
+      font-size: 11px; line-height: 1.4; color: #9fc2e8;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      overflow-wrap: anywhere;
+      /* The fallback when the clipboard is refused is "we selected it, press
+         Ctrl+C", and that needs the text to be selectable. */
+      -webkit-user-select: text; user-select: text;
+    }
+    .link-meta { font-size: 10.5px; color: #8a8a9c; overflow-wrap: anywhere; }
+    .link-note { font-size: 10.5px; color: #8a8a9c; }
+
+    .link-row { display: flex; gap: 7px; }
+    .ghost {
+      all: unset;
+      box-sizing: border-box;            /* see note above */
+      flex: 1;
+      display: flex; align-items: center; justify-content: center;
+      padding: 7px 10px; border-radius: 8px;
+      background: #22222c; border: 1px solid #34343f; color: #e8e8ee;
+      font-size: 12px; font-weight: 600; cursor: pointer; text-align: center;
+    }
+    .ghost:hover { background: #2c2c38; }
+    /* Open is an <a>, not a button — see the note on render(). Styled to match
+       Copy so the pair reads as one row, but it is a real link the user clicks. */
+    a.ghost { text-decoration: none; color: #e8e8ee; }
+
     .hidden { display: none !important; }
 
     .bubble {
@@ -192,6 +231,20 @@ AF.widget = (() => {
         <button class="primary" id="action">Fill &amp; Submit</button>
 
         <div class="msg hidden" id="msg"></div>
+
+        <div class="link hidden" id="link">
+          <div class="link-title" id="linkTitle"></div>
+          <div class="link-url" id="linkUrl"></div>
+          <div class="link-meta" id="linkMeta"></div>
+          <div class="link-row">
+            <button class="ghost" id="linkCopy" type="button">Copy</button>
+            <!-- No href until there is a link to open, and target/rel are fixed
+                 here rather than per render so a link can never be opened into
+                 this page or hand the opener over. -->
+            <a class="ghost" id="linkOpen" target="_blank" rel="noopener noreferrer">Open</a>
+          </div>
+          <div class="link-note hidden" id="linkNote"></div>
+        </div>
       </div>
     </div>
 
@@ -251,6 +304,11 @@ AF.widget = (() => {
     els.pass.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') handlers.onAction?.(els.pass.value);
     });
+    els.linkCopy.addEventListener('click', copyLink);
+    /* Nothing is wired to the Open anchor on purpose. It has an href and the
+     * browser does the rest; adding a click handler here would put the
+     * extension back in the business of navigating. */
+
     els.collapse.addEventListener('click', () => setCollapsed(true));
     els.bubble.addEventListener('click', () => {
       /* A click fires right after pointerup even though the drag captured the
@@ -545,6 +603,77 @@ AF.widget = (() => {
     applyPosition(clampToViewport(fromCorner(corner, size), size, viewport()));
   }
 
+  /* ── THE ACTIVATION LINK ─────────────────────────────────────────────
+   * Shown, never followed. main.js gets the URL from the service worker, which
+   * has already discarded everything that is not an https *.myworkdayjobs.com
+   * /activate/ link — but "narrow" is not "trusted", so the only way this URL
+   * is ever visited is the user clicking the Open anchor above. Nothing here
+   * calls click(), location or window.open. */
+
+  /** The full URL currently on screen. The element shows a truncated form, so
+   *  Copy must read this and not the text node. */
+  let linkUrl = '';
+
+  /** Characters of URL to show before the middle is cut out. Long enough for
+   *  the host and the /activate/ segment to both survive, which is the part a
+   *  person can actually check. */
+  const URL_MAX = 64;
+
+  /**
+   * Shorten from the middle, with an ellipsis that says so.
+   *
+   * The end matters as much as the start — the token lives there — so a
+   * trailing cut would hide the half that distinguishes two links. The
+   * ellipsis is never optional: a URL silently shortened is a URL the user
+   * would check and approve without having seen it. Pure, and exported next to
+   * the positioning helpers so it can be unit-tested the same way; today it is
+   * checked through the rendered widget in test/flow-harness.html.
+   */
+  function middleTruncate(url, max = URL_MAX) {
+    const s = String(url ?? '');
+    if (s.length <= max) return s;
+    const keep = max - 1; // the ellipsis takes one
+    const head = Math.ceil(keep / 2);
+    return `${s.slice(0, head)}…${s.slice(s.length - (keep - head))}`;
+  }
+
+  /** The small grey line under the buttons — copy outcomes only. */
+  function linkNote(text) {
+    els.linkNote.textContent = text ?? '';
+    els.linkNote.classList.toggle('hidden', !text);
+  }
+
+  /**
+   * Copy lives here rather than in main.js because the fallback needs the
+   * node: the async clipboard API can be refused (permissions policy, an
+   * unfocused document), and a failed copy is invisible — you paste and get
+   * whatever was there before. So we select the address instead and say so,
+   * the same shape as the popup's Copy buttons. The selection has to be made
+   * inside this shadow root, which nothing outside it can reach.
+   */
+  async function copyLink() {
+    if (!linkUrl) return;
+    try {
+      await navigator.clipboard.writeText(linkUrl);
+      linkNote('Copied.');
+    } catch {
+      selectLinkText();
+      linkNote('Could not copy — the address is selected, press Ctrl+C.');
+    }
+  }
+
+  function selectLinkText() {
+    try {
+      // Chrome's ShadowRoot.getSelection() is the one that can hold a range
+      // inside a shadow tree; window.getSelection() is the fallback.
+      const sel = root.getSelection?.() ?? window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(els.linkUrl);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    } catch { /* selection refused — the address is still on screen to read */ }
+  }
+
   /**
    * The single render entry point.
    *
@@ -585,6 +714,29 @@ AF.widget = (() => {
       els.msg.classList.add('hidden');
     }
 
+    if (s.link?.url) {
+      const changed = s.link.url !== linkUrl;
+      linkUrl = s.link.url;
+
+      els.link.classList.remove('hidden');
+      els.linkTitle.textContent = s.link.title ?? 'Activation link';
+      els.linkUrl.textContent = middleTruncate(s.link.url);
+      els.linkUrl.title = s.link.url; // the whole thing, on hover
+      els.linkMeta.textContent = s.link.meta ?? '';
+      els.linkOpen.href = s.link.url;
+
+      // A "Copied." left over from the previous link would be a lie about this one.
+      if (changed) linkNote('');
+    } else {
+      linkUrl = '';
+      els.link.classList.add('hidden');
+      /* Drop the href rather than just hiding the row. An anchor kept in the
+       * tree with a stale address is one un-hide away from opening the wrong
+       * link, and without href it is not a link at all. */
+      els.linkOpen.removeAttribute('href');
+      linkNote('');
+    }
+
     /* A long message can grow the panel by a hundred pixels. While the widget
      * hangs off the bottom-right that just pushes the top edge up, but once it
      * is top-anchored the growth goes downward and can run off screen. */
@@ -598,16 +750,17 @@ AF.widget = (() => {
     root = null;
     els = {};
     drag = null;
+    linkUrl = '';
     suppressBubbleClick = false;
     pos = null; // the next mount() re-reads the saved position from storage
   }
 
   const isMounted = () => !!host;
 
-  // clampToViewport, keepBottomRightCorner, toCorner and fromCorner are
-  // exported for test/widget.test.mjs, not for callers.
+  // clampToViewport, keepBottomRightCorner, toCorner, fromCorner and
+  // middleTruncate are exported for the tests, not for callers.
   return {
     mount, render, destroy, isMounted, setCollapsed,
-    clampToViewport, keepBottomRightCorner, toCorner, fromCorner,
+    clampToViewport, keepBottomRightCorner, toCorner, fromCorner, middleTruncate,
   };
 })();
