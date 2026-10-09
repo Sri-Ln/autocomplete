@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Guards harness</title>
+    <style>
+      body { margin:0; padding:24px; background:#0b0b10; color:#e8e8ee;
+             font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+      h1 { font-size:15px; margin:0 0 4px; }
+      p.lede { color:#8a8a9c; font-size:12.5px; margin:0 0 18px; max-width:76ch; }
+      fieldset { border:1px solid #2c2c38; border-radius:10px; padding:14px; margin:0 0 16px;
+                 max-width:620px; }
+      legend { color:#8a8a9c; font-size:11px; text-transform:uppercase;
+               letter-spacing:.05em; padding:0 6px; }
+      label { display:block; font-size:12px; color:#b9b9c9; margin-bottom:12px; }
+      input[type=text], input[type=email] { display:block; width:100%; margin-top:5px;
+             padding:7px 10px; border-radius:7px; background:#0f0f15; border:1px solid #2c2c38;
+             color:#e8e8ee; font-size:13px; font-family:inherit; }
+      pre { background:#0f0f15; border:1px solid #2c2c38; border-radius:8px; padding:11px;
+            font-size:11.5px; color:#9fc2e8; margin:0; overflow:auto; max-width:620px; }
+      .run { margin:20px 0 12px; display:flex; gap:8px; }
+      .run button { padding:8px 14px; border-radius:8px; border:none; background:#7c5cff;
+             color:#fff; font-weight:600; font-size:13px; cursor:pointer; font-family:inherit; }
+      #verdict { margin:12px 0; padding:11px 13px; border-radius:8px; font-size:13px; max-width:620px; }
+      .pass { background:#16281f; color:#7fd6a6; } .fail { background:#2b1717; color:#f09a9a; }
+      /* The real thing: 1x0px, absolutely positioned, invisible to a human. */
+      .beecatcher { position:absolute; width:1px; height:0; overflow:hidden; }
+    </style>
+  </head>
+  <body>
+    <h1>Guards harness</h1>
+    <p class="lede">
+      Loads the real <code>content/guards.js</code> and <code>content/filler.js</code>.
+      The rule under test: a field that is <b>not on the page</b> is not the same as a
+      field sitting there <b>empty</b>. Tenants render different subsets of the same
+      form — the Create Account terms checkbox is absent on some of them — and refusing
+      to submit over a field that does not exist leaves the user nothing to fix. Absent
+      falls through to <code>unknownRequiredEmpty()</code>, which reads the DOM rather
+      than our selector map, so a rotted selector over a genuinely required field is
+      still caught.
+    </p>
+
+    <fieldset>
+      <legend>A tenant's Create Account form — no terms checkbox</legend>
+      <label for="em">Email
+        <input type="email" id="em" data-automation-id="email" required />
+      </label>
+      <label for="pw">Password
+        <input type="text" id="pw" data-automation-id="password" required />
+      </label>
+      <label for="vp">Verify password
+        <input type="text" id="vp" data-automation-id="verifyPassword" required />
+      </label>
+      <!-- No [data-automation-id="createAccountCheckbox"] anywhere on purpose. -->
+      <button data-automation-id="createAccountSubmitButton">Create Account</button>
+    </fieldset>
+
+    <fieldset>
+      <legend>Fields the guards must reason about separately</legend>
+      <label for="ck">Accept terms
+        <input type="checkbox" id="ck" data-automation-id="otherTenantCheckbox" />
+      </label>
+      <!-- Required, on the page, and NOT in any field map: the stale-map catcher. -->
+      <label for="orphan">Middle name
+        <input type="text" id="orphan" data-automation-id="formField-middleName" required />
+      </label>
+      <!-- Must stay empty. Never reported as a missing field. -->
+      <div class="beecatcher">
+        <input type="text" name="website" data-automation-id="beecatcher" required />
+      </div>
+    </fieldset>
+
+    <div class="run"><button id="runBtn">Run checks</button></div>
+    <div id="verdict"></div>
+    <pre id="out"></pre>
+
+    <script>
+      window.AF = { debug: false, log: (...a) => window.AF.debug && console.log('[AF]', ...a) };
+    </script>
+    <script src="../content/match.js"></script>
+    <script src="../content/react-set.js"></script>
+    <script src="../content/filler.js"></script>
+    <script src="../content/guards.js"></script>
+    <script>
+      const lines = [];
+      let failed = 0;
+      const check = (label, actual, expected) => {
+        const ok = JSON.stringify(actual) === JSON.stringify(expected);
+        if (!ok) failed++;
+        lines.push(`${ok ? '  ok  ' : ' FAIL '} ${label}` +
+          (ok ? '' : `\n         got  ${JSON.stringify(actual)}\n         want ${JSON.stringify(expected)}`));
+      };
+      const blocks = (reason) => typeof reason === 'string' && reason.length > 0;
+
+      /* The Create Account map, exactly as sites/workday.js declares it. */
+      const CREATE_ACCOUNT_FIELDS = {
+        email: '[data-automation-id="email"]',
+        password: '[data-automation-id="password"]',
+        verify: '[data-automation-id="verifyPassword"]',
+        terms: '[data-automation-id="createAccountCheckbox"]',
+      };
+      const CREATE_ACCOUNT_VALUES = {
+        email: 'someone@example.com',
+        password: 'hunter2hunter2',
+        verify: 'hunter2hunter2',
+        terms: true,
+      };
+
+      const set = (id, v) => { document.getElementById(id).value = v; };
+
+      function run() {
+        lines.length = 0;
+        failed = 0;
+
+        const L = (fields = CREATE_ACCOUNT_FIELDS, values = CREATE_ACCOUNT_VALUES) =>
+          AF.guards.allFieldsLanded(fields, values);
+
+        /* ---- the report: a tenant with no terms checkbox ---- */
+
+        set('em', 'someone@example.com');
+        set('pw', 'hunter2hunter2');
+        set('vp', 'hunter2hunter2');
+
+        check('an absent field does not block submit', L(), null);
+
+        /* ---- but a field that IS there and IS empty still does ---- */
+
+        set('vp', '');
+        check('a present-but-empty field blocks', blocks(L()), true);
+        check('and it is named', /verify/.test(L()), true);
+        check('the absent one is not named alongside it', /terms/.test(L()), false);
+        set('vp', 'hunter2hunter2');
+
+        /* ---- a checkbox that IS on the form must still be ticked ---- */
+
+        const ckFields = { ...CREATE_ACCOUNT_FIELDS, terms: '[data-automation-id="otherTenantCheckbox"]' };
+        check('an unticked checkbox on the page blocks', blocks(L(ckFields)), true);
+        document.getElementById('ck').checked = true;
+        check('ticking it satisfies the guard', L(ckFields), null);
+        document.getElementById('ck').checked = false;
+
+        /* ---- the backstop: absent-here must not mean unchecked ----
+         * If our selector rotted and the field is really on the page and really
+         * required, the DOM scan is what catches it. */
+
+        const known = Object.values(CREATE_ACCOUNT_FIELDS);
+        const orphan = AF.guards.unknownRequiredEmpty(known);
+        check('a required field we never mapped still blocks', blocks(orphan), true);
+        check('and it is named by its label', /middle name/i.test(orphan), true);
+
+        document.getElementById('orphan').value = 'Grace';
+        check('filling it clears the scan', AF.guards.unknownRequiredEmpty(known), null);
+
+        /* ---- the honeypot stays empty and stays unreported ---- */
+
+        check('the honeypot is never reported as missing',
+          /website|beecatcher/i.test(AF.guards.unknownRequiredEmpty(known) ?? ''), false);
+        check('and we never filled it',
+          document.querySelector('[data-automation-id="beecatcher"]').value, '');
+
+        document.getElementById('orphan').value = ''; // leave the page reusable
+
+        const v = document.getElementById('verdict');
+        v.className = failed ? 'fail' : 'pass';
+        v.textContent = failed ? `${failed} check(s) FAILED` : 'All checks passed';
+        document.getElementById('out').textContent = lines.join('\n');
+        return failed;
+      }
+
+      document.getElementById('runBtn').addEventListener('click', run);
+      window.__afRun = run; // for the Playwright driver
+      run();
+    </script>
+  </body>
+</html>

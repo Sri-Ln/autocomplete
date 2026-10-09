@@ -96,12 +96,19 @@
       /* Nested source tree, mirroring how Workday groups these. The answer is
          deliberately worded nothing like a tenant slug, so the hostname
          heuristic alone cannot find it — only the fuzzy match can. */
+      /* The shape that broke it on a live tenant: a CATEGORY named exactly what
+         the user saved ("Career Site"), with the real answer one level inside,
+         worded so that no generic phrase matches it head-on. The category
+         scores a perfect 1.0, so anything that scores the whole list at once
+         clicks the folder, opens it, and reports the question answered. */
       const SOURCE_TREE = {
         'Employee Referral': [],
-        'Job Sites': ['Indeed', 'LinkedIn', 'Glassdoor', 'Acme Corp Career Site', 'ZipRecruiter'],
+        'Career Site': ['Acme Corp Career Section', 'Third-Party Recruiter'],
+        'Job Sites': ['Indeed', 'LinkedIn', 'Glassdoor', 'ZipRecruiter'],
         'Social Media': ['Facebook', 'X', 'Instagram'],
         'University / College': ['Career Fair', 'Campus Event'],
       };
+      const PHONE_TYPES = ['Select One', 'Home', 'Mobile', 'Work'];
       // Includes the full M-run, which is what makes a bare "MI" ambiguous.
       const STATES = ['Select One','Alabama','Alaska','Arizona','California','Connecticut',
         'Delaware','Florida','Georgia','Maine','Maryland','Massachusetts','Michigan',
@@ -114,14 +121,36 @@
             h('input', { type: 'text', value, onChange: (e) => onChange(e.target.value) })));
       }
 
+      /* Escape closes, and so does a click anywhere outside — both are how a
+         person dismisses one of these, and both are what closePopup() tries
+         before we let anything navigate the page. */
+      function useDismiss(open, setOpen) {
+        React.useEffect(() => {
+          if (!open) return;
+          const onKey = (e) => e.key === 'Escape' && setOpen(false);
+          // Outside the popup only — a click ON an option is a selection, not
+          // a dismissal, and treating it as both closes the list mid-drill.
+          const onDown = (e) => {
+            if (!e.target?.closest?.('.popup')) setOpen(false);
+          };
+          document.addEventListener('keydown', onKey);
+          document.body.addEventListener('click', onDown);
+          return () => {
+            document.removeEventListener('keydown', onKey);
+            document.body.removeEventListener('click', onDown);
+          };
+        }, [open]);
+      }
+
       function Listbox({ id, label, value, options, onChange }) {
         const [open, setOpen] = useState(false);
         const popupId = `${id}-popup`;
+        useDismiss(open, setOpen);
         return h('div', { 'data-automation-id': id },
           h('label', null, label,
             h('button', {
               className: 'trigger', type: 'button',
-              'aria-controls': popupId, 'aria-expanded': open,
+              'aria-controls': popupId, 'aria-haspopup': 'listbox', 'aria-expanded': open,
               onClick: () => setOpen((o) => !o),
             }, value || 'Select One')),
           open && h('div', { className: 'popup', id: popupId, role: 'listbox' },
@@ -138,6 +167,7 @@
         const [query, setQuery] = useState('');
         const [category, setCategory] = useState(null);
         const popupId = `${id}-popup`;
+        useDismiss(open, setOpen);
 
         let options;
         if (query) {
@@ -163,14 +193,33 @@
                       onChange: (e) => { setQuery(e.target.value); setOpen(true); },
                     })))),
           open && !value && h('div', { className: 'popup', id: popupId, role: 'listbox' },
-            options.map((o) =>
-              h('div', {
-                key: o, role: 'option',
+            /* Workday's own back arrow inside a category (autoId "backButton").
+               The list also stays drilled in across close and reopen, so a
+               picker that assumes it starts at the top level is caught here. */
+            category && !query && h('span', {
+              'data-automation-id': 'backButton', onClick: () => setCategory(null),
+            }, '‹ Back'),
+            options.map((o) => {
+              /* Workday's own row markup: the label carries its text on
+                 data-automation-label, a leaf wraps it in promptLeafNode, and a
+                 category gets a chevron charm instead. Nothing else tells the
+                 two apart — no aria-haspopup, no aria-expanded. */
+              const isCategory = !query && (SOURCE_TREE[o] ?? []).length > 0;
+              const label = h('p', {
+                'data-automation-id': 'promptOption', 'data-automation-label': o,
+              }, o);
+
+              return h('div', {
+                key: o, role: 'option', 'data-automation-id': 'menuItem',
                 onClick: () => {
-                  if (!query && SOURCE_TREE[o]) { setCategory(o); return; } // drill in
+                  if (isCategory) { setCategory(o); return; } // drill in
                   onChange(o); setOpen(false);
                 },
-              }, o))));
+              },
+                isCategory
+                  ? [label, h('span', { key: 'c', className: 'wd-icon-chevron-right' }, '›')]
+                  : h('div', { 'data-automation-id': 'promptLeafNode' }, label));
+            })));
       }
 
       /* Yes/No questions, React-controlled radios — the shape application
@@ -185,6 +234,11 @@
         'Are you willing to relocate?',
         'Have you ever been convicted of a felony?',
         'Do you hold a current security clearance?',
+        /* Verbatim shape of a live one, and three problems in one string: the
+           company name starts with "The", a parenthetical defines the affiliates,
+           and the required marker is an aria-hidden <abbr> INSIDE the legend, so
+           it lands in textContent. Trailing * here means "render the abbr". */
+        'Have you previously been employed by The Hartwell Group (including any company affiliated with or acquired by The Hartwell Group)?*',
       ];
 
       function Questions() {
@@ -194,7 +248,9 @@
         return h('div', { 'data-automation-id': 'applicationQuestions' },
           QUESTIONS.map((q, i) =>
             h('fieldset', { key: i, style: { marginTop: '10px', padding: '8px' } },
-              h('legend', { style: { fontSize: '11px', color: '#8a8a9c' } }, q),
+              h('legend', { style: { fontSize: '11px', color: '#8a8a9c' } },
+                q.replace(/\*$/, ''),
+                q.endsWith('*') && h('abbr', { 'aria-hidden': 'true' }, '*')),
               ['Yes', 'No'].map((opt) =>
                 h('label', {
                   key: opt,
@@ -211,11 +267,16 @@
 
       function Form() {
         const [s, setS] = useState({
-          firstName: '', lastName: '', address1: '', city: '', zip: '',
-          phone: '', state: '', country: 'United States of America', source: '',
+          firstName: '', lastName: '', address1: '', address2: '', city: '', zip: '',
+          phone: '', phoneType: '', state: '', county: '',
+          /* Another autofiller on the page got here first (seen live: the
+             applicant's email, in Phone Extension). */
+          phoneExtension: 'someone@example.com',
+          country: 'United States of America', source: '',
         });
         const set = (k) => (v) => setS((p) => ({ ...p, [k]: v }));
         window.__state = s;
+        window.__clearSource = () => set('source')('');
 
         return h('div', { 'data-automation-id': 'applyFlowMyInfoPage' },
           h('div', { className: 'cols' },
@@ -235,14 +296,25 @@
                              value: s.lastName, onChange: set('lastName') }),
               h(TextField, { id: 'formField-addressLine1', label: 'Address Line 1',
                              value: s.address1, onChange: set('address1') }),
+              h(TextField, { id: 'formField-addressLine2', label: 'Address Line 2',
+                             value: s.address2, onChange: set('address2') }),
               h(TextField, { id: 'formField-city', label: 'City',
                              value: s.city, onChange: set('city') }),
               h(Listbox, { id: 'formField-countryRegion', label: 'State',
                            value: s.state, options: STATES, onChange: set('state') }),
+              h(TextField, { id: 'formField-regionSubdivision1', label: 'County',
+                             value: s.county, onChange: set('county') }),
               h(TextField, { id: 'formField-postalCode', label: 'Postal Code',
                              value: s.zip, onChange: set('zip') }),
               h(TextField, { id: 'formField-phoneNumber', label: 'Phone Number*',
                              value: s.phone, onChange: set('phone') }),
+              h(TextField, { id: 'formField-extension', label: 'Phone Extension',
+                             value: s.phoneExtension, onChange: set('phoneExtension') }),
+              /* Required on real tenants, and there was no picker for it — it
+                 blocked submit as an unmapped required field. */
+              h(Listbox, { id: 'formField-phoneType', label: 'Phone Device Type*',
+                           value: s.phoneType, options: PHONE_TYPES,
+                           onChange: set('phoneType') }),
               h(Questions, null),
               h('button', { 'data-automation-id': 'pageFooterNextButton', type: 'button' },
                 'Save and Continue')),
@@ -251,6 +323,106 @@
       }
 
       ReactDOM.createRoot(document.getElementById('root')).render(h(Form));
+
+      /* The source question as some tenants render it (seen on initrode.wd3): not a
+         typeahead but Workday's single select — a listbox button plus a
+         display:none <input> that carries the field's value, with its onChange
+         wired straight to the form. Typing a search query into that input
+         writes the query AS the value; Workday then re-reads the form
+         definition for a source id that does not exist, the server answers
+         with an error, and the page dies with "Something went wrong". */
+      const SELECT_SOURCES = ['Select One', 'Acme Career Site', 'LinkedIn', 'Indeed'];
+      window.__selectWrites = [];
+
+      function WorkdaySelect({ id, label, value, options, onChange }) {
+        const [open, setOpen] = useState(false);
+        const popupId = `${id}-popup`;
+        useDismiss(open, setOpen);
+        return h('div', { 'data-automation-id': id },
+          h('label', null, label,
+            h('button', {
+              className: 'trigger', type: 'button', 'aria-haspopup': 'listbox',
+              'aria-controls': open ? popupId : undefined,
+              onClick: () => setOpen((o) => !o),
+            }, value || 'Select One'),
+            h('input', {
+              type: 'text', style: { display: 'none' }, value,
+              onChange: (e) => { window.__selectWrites.push(e.target.value); onChange(e.target.value); },
+            })),
+          open && h('div', { className: 'popup', id: popupId, role: 'listbox' },
+            options.map((o) =>
+              h('div', {
+                key: o, role: 'option',
+                onClick: () => { onChange(o === 'Select One' ? '' : o); setOpen(false); },
+              }, o))));
+      }
+
+      function SelectSourceForm() {
+        const [value, setValue] = useState('');
+        window.__selectSource = value;
+        return h(WorkdaySelect, { id: 'formField-source-select', label: 'How Did You Hear About Us?*',
+                                  value, options: SELECT_SOURCES, onChange: setValue });
+      }
+
+      /* A dropdown sharing a parent with a filled multi-select — the layout of
+         every Education entry on My Experience. Workday renders a multi-select's
+         chosen items as <ul role="listbox" data-automation-id="selectedItemList">,
+         always on screen (verified on a saved live page). This dropdown's button
+         has no aria-controls and its popup renders a beat after the click, so the
+         first poll finds no new listbox and falls through to the wrapper search —
+         which used to return the neighbour's pill list as "the options". */
+      function SlowListbox({ id, value, options, onChange }) {
+        const [open, setOpen] = useState(false);
+        const [shown, setShown] = useState(false);
+        useDismiss(open, setOpen);
+        React.useEffect(() => {
+          if (!open) { setShown(false); return; }
+          const t = setTimeout(() => setShown(true), 120);
+          return () => clearTimeout(t);
+        }, [open]);
+        return h('div', { 'data-automation-id': id },
+          h('button', { type: 'button', 'aria-haspopup': 'listbox', onClick: () => setOpen((o) => !o) },
+            value || 'Select One'),
+          open && shown && h('div', { className: 'popup', role: 'listbox' },
+            options.map((o) => h('div', {
+              key: o, role: 'option', onClick: () => { onChange(o); setOpen(false); },
+            }, o))));
+      }
+
+      function EntryWithPills() {
+        const [degree, setDegree] = useState('');
+        window.__entryDegree = degree;
+        return h('div', { 'data-automation-id': 'entry-with-pills' },
+          h(SlowListbox, { id: 'formField-degreeFixture', value: degree, onChange: setDegree,
+                           options: ['Select One', 'Associate', 'Bachelor', 'Master'] }),
+          h('div', { 'data-automation-id': 'formField-fieldOfStudyFixture' },
+            h('ul', { role: 'listbox', 'data-automation-id': 'selectedItemList', 'aria-label': 'items selected' },
+              h('li', null,
+                h('div', { 'data-automation-id': 'selectedItem' },
+                  h('p', { 'data-automation-id': 'promptOption', 'data-automation-label': 'Astro Gardening' },
+                    'Astro Gardening'))))));
+      }
+
+      /* County as some tenants render it: a listbox of the state's counties,
+         worded with the suffix the profile leaves off. */
+      function CountyListForm() {
+        const [v, setV] = useState('');
+        window.__countyList = v;
+        return h(Listbox, { id: 'formField-countyListFixture', label: 'County (list)',
+                            value: v, onChange: setV,
+                            options: ['Select One', 'Kalamazoo County', 'Kent County', 'Wayne County'] });
+      }
+      const countyRoot = document.createElement('div');
+      document.getElementById('root').after(countyRoot);
+      ReactDOM.createRoot(countyRoot).render(h(CountyListForm));
+
+      const pillsRoot = document.createElement('div');
+      document.getElementById('root').after(pillsRoot);
+      ReactDOM.createRoot(pillsRoot).render(h(EntryWithPills));
+
+      const selectRoot = document.createElement('div');
+      document.getElementById('root').after(selectRoot);
+      ReactDOM.createRoot(selectRoot).render(h(SelectSourceForm));
 
       /* ---------- drive the real adapter ---------- */
 
@@ -262,7 +434,7 @@
       const PROFILE = {
         firstName: 'Testy', lastName: 'McTestface', phone: '5555550100',
         address1: '123 Example Street', address2: 'Unit 7',
-        city: 'Springfield', state: 'MI', zip: '00000',
+        city: 'Springfield', state: 'MI', zip: '00000', county: 'Kalamazoo',
         country: 'USA', source: 'Career Site',
         // Inputs to the question engine.
         employers: ['Initech', 'Globex Corporation'],
@@ -302,21 +474,139 @@
         return out.stored;
       };
 
-      document.getElementById('run').addEventListener('click', async () => {
-        const { report, state } = await window.__runFill();
-        const want = {
-          firstName: 'Testy', lastName: 'McTestface', address1: '123 Example Street',
-          city: 'Springfield', zip: '00000', phone: '5555550100',
-          state: 'Michigan', country: 'United States of America',
-          source: 'Acme Corp Career Site',
+      const WANT = {
+        firstName: 'Testy', lastName: 'McTestface', address1: '123 Example Street',
+        address2: 'Unit 7', city: 'Springfield', zip: '00000', phone: '5555550100',
+        state: 'Michigan', country: 'United States of America',
+        phoneType: 'Mobile', county: 'Kalamazoo', phoneExtension: '',
+        /* One level inside the "Career Site" category — NOT the category row,
+           which is what a whole-list match clicks. */
+        source: 'Acme Corp Career Section',
+      };
+
+      /* The prior-employment question, answered from the employer list. It is
+         last in QUESTIONS; The Hartwell Group is not in PROFILE.employers. */
+      const HARTWELL_INDEX = QUESTIONS.length - 1;
+
+      window.__check = async () => {
+        const { state, answers } = await window.__runFill();
+        const wrong = Object.entries(WANT)
+          .filter(([k, v]) => state[k] !== v)
+          .map(([k, v]) => `${k}: got "${state[k]}" want "${v}"`);
+
+        if (answers[HARTWELL_INDEX] !== 'No') {
+          wrong.push(`prior-employment radio: got "${answers[HARTWELL_INDEX]}" want "No"`);
+        }
+
+        const W = AF.sites.workday;
+        const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+        /* Every click in a prompt re-renders the list, so a row read before one
+           click is detached by the next. Clicking a detached node still runs
+           React's handler against a fiber that is no longer in the tree, and
+           Workday's own code can throw out of it — which takes down the
+           application page and loses the step. */
+        const ghost = document.createElement('div');
+        if (W.clickRow(ghost) !== false) wrong.push('clickRow accepted a detached row');
+        if (W.clickRow(null) !== false) wrong.push('clickRow accepted nothing at all');
+
+        /* Nothing may still be open when Continue is clicked: navigating with a
+           portal mounted unmounts it mid-navigation, inside the site's tree. */
+        document.querySelector('[data-automation-id="formField-countryRegion"] button').click();
+        await sleep(200);
+        if (!W.visiblePopups().length) wrong.push('fixture did not open a popup to close');
+
+        const clear = await AF.sites.workday.pages.myInformation.beforeSubmit();
+        if (W.visiblePopups().length) wrong.push('beforeSubmit left a popup open');
+        if (document.activeElement && document.activeElement !== document.body) {
+          wrong.push(`beforeSubmit left focus on ${document.activeElement.tagName}`);
+        }
+
+        /* Source rendered as a single select: answered from the list, and the
+           hidden value input never typed into. */
+        const sel = await W.pickFromMultiselect(
+          ['[data-automation-id="formField-source-select"]'], 'Career Site', 'How Did You Hear');
+        await sleep(100);
+        if (window.__selectWrites.length) {
+          wrong.push(`typed into the hidden value input of a select: ${JSON.stringify(window.__selectWrites)}`);
+        }
+        if (!sel.ok || window.__selectSource !== 'Acme Career Site') {
+          wrong.push(`select-style source: got "${window.__selectSource}" (${sel.reason ?? 'ok'}) want "Acme Career Site"`);
+        }
+
+        /* County as a listbox: picked from the list, never typed. */
+        const countyPick = await W.pickOrType(
+          ['[data-automation-id="formField-countyListFixture"]'], 'Kalamazoo', null);
+        await sleep(100);
+        if (window.__countyList !== 'Kalamazoo County') {
+          wrong.push(`county listbox: got "${window.__countyList}" (${countyPick.reason ?? 'ok'})`);
+        }
+
+        /* A digits-only extension someone else typed is left alone. */
+        const ext = document.querySelector('[data-automation-id="formField-extension"] input');
+        AF.setNativeValue(ext, '204');
+        await sleep(50);
+        AF.sites.workday.pages.myInformation.clearJunkExtension({}, {});
+        await sleep(50);
+        if (window.__state.phoneExtension !== '204') {
+          wrong.push(`a real extension was cleared: got "${window.__state.phoneExtension}"`);
+        }
+
+        /* A dropdown next to a filled multi-select: the neighbour's always-visible
+           pill list is never mistaken for this dropdown's options, and on its
+           own it never counts as "a popup is still open". */
+        const pillPick = await W.pickFromListbox(
+          ['[data-automation-id="formField-degreeFixture"]'], 'Bachelor', null);
+        await sleep(100);
+        if (window.__entryDegree !== 'Bachelor') {
+          wrong.push(`dropdown beside a pill list: got "${window.__entryDegree}" ` +
+                     `(${pillPick.reason ?? 'ok'}${pillPick.sample ? ' — saw: ' + pillPick.sample.join(', ') : ''})`);
+        }
+        await W.closePopup();
+        if (W.visiblePopups().length) {
+          wrong.push(`a pill list counts as an open popup: ${W.visiblePopups().map((p) => p.textContent).join(' | ')}`);
+        }
+
+        /* Per-company memory. What is selected at submit is read back as the
+           option's own label, then offered first on the next fill — even when
+           the profile value would match something else entirely. */
+        const page = AF.sites.workday.pages.myInformation;
+        const read = page.readRemembered();
+        if (read.source !== 'Acme Corp Career Section') {
+          wrong.push(`readRemembered: got ${JSON.stringify(read)} want source "Acme Corp Career Section"`);
+        }
+
+        const refill = async (remembered) => {
+          window.__clearSource();
+          await sleep(100);
+          const ctx = { profile: PROFILE, remembered };
+          const report = await page.customFill.call(page, page.values(ctx),
+            { filled: [], already: [], skipped: [], failed: [] }, ctx);
+          await sleep(100);
+          return report;
         };
-        const wrong = Object.entries(want).filter(([k, v]) => state[k] !== v);
+
+        await refill({ source: 'Glassdoor' });
+        if (window.__state.source !== 'Glassdoor') {
+          wrong.push(`remembered pick not used first: got "${window.__state.source}" want "Glassdoor"`);
+        }
+
+        /* The tenant renamed its options since: fall back to the profile. */
+        await refill({ source: 'Some Option That Is Gone' });
+        if (window.__state.source !== 'Acme Corp Career Section') {
+          wrong.push(`stale memory did not fall back to the profile: got "${window.__state.source}"`);
+        }
+
         const el = document.getElementById('verdict');
         el.className = wrong.length ? 'fail' : 'pass';
         el.textContent = wrong.length
-          ? `FAIL — ${wrong.map(([k, v]) => `${k}: got "${state[k]}" want "${v}"`).join(' · ')}`
-          : 'PASS — every field matches React state, including State (MA→Massachusetts) and the nested source answer.';
-      });
+          ? `FAIL — ${wrong.join(' · ')}`
+          : 'PASS — every field matches React state: State (MI→Michigan), Phone Device Type, ' +
+            'the nested source answer one level inside its category, and the prior-employment radio.';
+        return wrong;
+      };
+
+      document.getElementById('run').addEventListener('click', window.__check);
 
       document.getElementById('reset').addEventListener('click', () => location.reload());
     </script>

@@ -252,12 +252,14 @@ No framework, no npm. Node's built-in WebCrypto is the same implementation
 Chrome's service worker uses, so these exercise the real thing.
 
 ```
+node test/util.test.mjs       # 13 checks — the debounce and poll every file leans on
 node test/crypto.test.mjs     # 11 checks — key derivation, round-trip, tampering
 node test/vault.test.mjs      # 17 checks — default vs. per-host credential lookup
-node test/match.test.mjs      # 48 checks — the fuzzy option matcher
-node test/questions.test.mjs  # 60 checks — how each question is classified
+node test/match.test.mjs      # 57 checks — the fuzzy option matcher
+node test/questions.test.mjs  # 70 checks — how each question is classified
 node test/free-text.test.mjs  # 11 checks — which fields can hold a paragraph
-node test/widget.test.mjs     # 24 checks — widget positioning arithmetic
+node test/widget.test.mjs     # 27 checks — widget positioning arithmetic
+node test/gmail.test.mjs      # 64 checks — which emailed URLs can be shown to you
 ```
 
 `vault.test.mjs` is the one that proves the behaviour you actually want: one
@@ -321,9 +323,14 @@ automatically** in the popup's Settings tab does the same thing for every page.
 | `sites/workday.js` | **All Workday selectors.** The only file Workday changes affect. |
 | `tools/harvest.js` | Console snippet for finding real automation-ids. |
 | `test/harness.html` | Proves the setter drives React state. |
+| `test/myinfo-harness.html` | The whole My Information fill, against a React form. |
+| `test/flow-harness.html` | `main.js` end to end: click → fill → guards → submit, plus the verification screen and the link lookup in the widget. |
 | `test/free-text-harness.html` | Visa question discovery + the live pill, in a real DOM. |
+| `test/guards-harness.html` | The submit-time safety scan. Absent field vs. empty one. |
+| `test/popup-harness.html` | The popup's own storage round-trip, driving the real popup. |
 | `test/crypto.test.mjs` | Key derivation, encryption, tamper detection. |
 | `test/vault.test.mjs` | Default vs. per-host credential lookup. |
+| `test/gmail.test.mjs` | Which emailed URLs survive the filter. Mostly rejections. |
 
 ## manifest.json — why it has no comments
 

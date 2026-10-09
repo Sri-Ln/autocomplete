@@ -1,0 +1,996 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Flow harness — main.js orchestration</title>
+    <style>
+      body { margin:0; padding:24px 320px 24px 24px; background:#0b0b10; color:#e8e8ee;
+             font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+      h1 { font-size:15px; margin:0 0 4px; }
+      p.lede { color:#8a8a9c; font-size:12.5px; margin:0 0 18px; max-width:76ch; }
+      .cols { display:grid; grid-template-columns:1fr 1fr; gap:20px; max-width:900px; }
+      fieldset { border:1px solid #2c2c38; border-radius:10px; padding:14px; margin:0; }
+      legend { color:#8a8a9c; font-size:11px; text-transform:uppercase; letter-spacing:.05em; padding:0 6px; }
+      label { display:block; font-size:11px; color:#8a8a9c; margin-bottom:10px; }
+      input[type=text], input[type=password], input[type=email] {
+             display:block; width:100%; margin-top:3px; padding:7px 9px; border-radius:7px;
+             background:#0f0f15; border:1px solid #2c2c38; color:#e8e8ee; font-size:13px;
+             font-family:inherit; }
+      button.trigger { display:block; width:100%; margin-top:3px; padding:7px 9px; border-radius:7px;
+             background:#0f0f15; border:1px solid #2c2c38; color:#e8e8ee; font-size:13px;
+             text-align:left; cursor:pointer; font-family:inherit; }
+      button.footer { margin-top:8px; padding:8px 12px; border-radius:8px; border:none;
+             background:#34343f; color:#c9c9d8; font-size:12.5px; cursor:pointer; font-family:inherit; }
+      .popup { position:absolute; z-index:50; margin-top:2px; width:260px; max-height:220px; overflow:auto;
+             background:#1d1d26; border:1px solid #44445a; border-radius:8px; padding:4px; }
+      .popup [role=option] { padding:6px 9px; border-radius:5px; font-size:12.5px; cursor:pointer; color:#e8e8ee; }
+      pre { background:#0f0f15; border:1px solid #2c2c38; border-radius:8px; padding:11px;
+            font-size:11.5px; color:#9fc2e8; margin:0; overflow:auto; max-height:520px; }
+      .run { margin:20px 0 12px; display:flex; gap:8px; }
+      .run button { padding:8px 14px; border-radius:8px; border:none; background:#7c5cff; color:#fff;
+             font-weight:600; font-size:13px; cursor:pointer; font-family:inherit; }
+      #verdict { margin:12px 0; padding:11px 13px; border-radius:8px; font-size:13px; max-width:900px; }
+      .pass { background:#16281f; color:#7fd6a6; } .fail { background:#2b1717; color:#f09a9a; }
+      .busy { background:#1d2430; color:#9fc2e8; }
+    </style>
+  </head>
+  <body>
+    <h1>Flow harness — the orchestrator in content/main.js</h1>
+    <p class="lede">
+      Loads every content script in manifest order against a React-controlled
+      Workday fixture, with <code>chrome</code> stubbed, and then drives the
+      <b>real widget button inside its shadow root with a real click</b>. Nothing
+      here calls <code>doFill</code> or <code>doSubmit</code> directly — those are
+      private to main.js, and the whole point is to exercise the path a user
+      takes: click → unlock check → fill → guards → submit.
+    </p>
+    <p class="lede">
+      Three fixtures, one at a time. Only one may be mounted, because
+      <code>AF.currentPage</code> returns the FIRST page whose detector matches
+      and Create Account is declared before My Information — both on screen and
+      My Information would never be reached. The third, the "we emailed you a
+      link" screen, is one the registry recognises as nothing at all; the
+      checks numbered 8 are about what the widget offers there, and about the
+      link it shows never being followed for you.
+    </p>
+
+    <div id="root"></div>
+
+    <!-- Standalone fixtures for the verification-screen detector, mounted for
+         real (it reads rendered text, so a detached node would not do) and
+         removed again before the widget checks run. -->
+    <div id="detectors"></div>
+
+    <div class="run">
+      <button id="runBtn">Re-run (reloads the page)</button>
+    </div>
+    <div id="verdict" class="busy">running…</div>
+    <pre id="out"></pre>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+
+    <script>
+      /* ================================================================
+       * 1. chrome stub — installed BEFORE any content script.
+       *
+       * main.js is an IIFE that calls start() on load and registers a
+       * runtime.onMessage listener at module scope, so `chrome` has to be
+       * real enough by then or the file throws on the way in.
+       * ============================================================== */
+
+      /* Everything here is invented. A fixture lands in git history, in
+         screenshots and in every clone of the repo, so it never carries a real
+         name, address, phone number or password. */
+      const PROFILE = {
+        firstName: 'Testy', lastName: 'McTestface', phone: '5555550100',
+        address1: '123 Example Street', address2: 'Unit 7',
+        city: 'Springfield', state: 'MI', zip: '00000',
+        country: 'USA', source: 'Career Site',
+        employers: ['Initech', 'Globex Corporation'],
+        relativesAt: [], over18: 'yes', workAuthorized: 'yes',
+        needsSponsorship: 'no', willingToRelocate: 'yes', noticePeriod: '2 weeks',
+      };
+      const CREDENTIAL = { email: 'fixture@example.invalid', password: 'correct horse battery staple' };
+
+      /* autoSubmit is TRUE for the whole run on purpose. My Information must
+         still take two clicks, because sites/workday.js sets confirmBeforeSubmit
+         on that page and a page-level rule outranks the setting. Create Account
+         does not set it, so the same settings object gives a one-click submit
+         there — which is exactly the difference checks 1 and 6 are about. */
+      const SETTINGS = { autoSubmit: true, showWidget: true };
+
+      /* In-memory chrome.storage, same shape as test/vault.test.mjs. */
+      const disk = {};
+      const mem = {};
+
+      window.__sent = [];      // every runtime message, in order
+      window.__answersStore = {};
+      window.__picksStore = {};  // this host's remembered dropdown answers
+
+      /* What the worker says when asked for the activation link. Replaced by
+         the checks; "not yet" is the state the poll spends most of its life in. */
+      window.__gmail = null;
+      window.__findReply = () => ({ ok: true, link: null, reason: 'NO_MATCH' });
+
+      window.chrome = {
+        runtime: {
+          async sendMessage(msg) {
+            window.__sent.push(msg);
+            switch (msg?.type) {
+              case 'status':
+                return { configured: true, unlocked: true, settings: SETTINGS };
+              case 'getFillData':
+                return {
+                  ok: true, profile: PROFILE, credential: CREDENTIAL,
+                  settings: SETTINGS, answers: window.__answersStore, source: 'default',
+                  picks: window.__picksStore,
+                };
+              case 'getProfile':
+                return { ok: true, profile: PROFILE };
+              case 'getAnswers':
+                return { ok: true, answers: window.__answersStore };
+              case 'saveAnswers':
+                window.__answersStore = msg.answers ?? {};
+                return { ok: true };
+              case 'savePick':
+                window.__picksStore = { ...window.__picksStore, [msg.key]: msg.value };
+                return { ok: true };
+
+              /* The Gmail lookup. `window.__gmail` is how a check says
+                 "connected" or "not connected"; the poll timings come from
+                 here because background/gmail.js is where the real ones come
+                 from, and main.js must use whatever it is handed. They are
+                 tiny so a whole 90-second policy plays out in under a second —
+                 a widget carrying its own copy of 5000/90000 would blow the
+                 elapsed-time check below. */
+              case 'gmailStatus':
+                return {
+                  ok: true,
+                  configured: true,
+                  connected: false,
+                  poll: { intervalMs: 60, timeoutMs: 300 },
+                  ...(window.__gmail ?? {}),
+                };
+              case 'gmailFindLink':
+                return window.__findReply();
+
+              default:
+                return { ok: true };
+            }
+          },
+          // main.js registers a listener for the popup's "Fill this page".
+          // Accept it and never dispatch anything into it.
+          onMessage: { addListener() {} },
+        },
+        storage: {
+          local: {
+            async get(k) { return k in disk ? { [k]: disk[k] } : {}; },
+            async set(o) { Object.assign(disk, o); },
+          },
+          session: {
+            async get(k) { return k in mem ? { [k]: mem[k] } : {}; },
+            async set(o) { Object.assign(mem, o); },
+            async remove(k) { delete mem[k]; },
+          },
+        },
+      };
+
+      /* ================================================================
+       * 2. instrumentation
+       *
+       * Installed here so it is in place before main.js constructs its
+       * observer. Counting is the reason this harness exists twice over: a
+       * user reported the page locking up on Fill & Submit, and the two
+       * suspects are the observer re-triggering off our own DOM writes and
+       * the poll loops behind the dropdown pickers.
+       * ============================================================== */
+
+      window.__counts = {
+        resolveContext: 0,   // set once registry.js has loaded
+        observerCallbacks: 0,
+        observerRecords: 0,
+        querySelectorAll: 0, // document-wide only
+      };
+
+      /* Only the observer main.js puts on documentElement is counted; nothing
+         else in the extension uses MutationObserver, but tagging by target
+         keeps that true if something later does. */
+      const RealMO = window.MutationObserver;
+      window.MutationObserver = class extends RealMO {
+        constructor(cb) {
+          super((records, obs) => {
+            if (obs.__afWatchesDocument) {
+              window.__counts.observerCallbacks++;
+              window.__counts.observerRecords += records.length;
+            }
+            return cb(records, obs);
+          });
+        }
+        observe(target, opts) {
+          if (target === document.documentElement && opts?.subtree) this.__afWatchesDocument = true;
+          return super.observe(target, opts);
+        }
+      };
+
+      /* Full-document querySelectorAll is the other suspect: findOpenPopup runs
+         one on every 50ms poll tick, and calls getClientRects on each hit. */
+      const realQSA = Document.prototype.querySelectorAll;
+      Document.prototype.querySelectorAll = function (...args) {
+        if (this === document) window.__counts.querySelectorAll++;
+        return realQSA.apply(this, args);
+      };
+
+      /* ---- did anything navigate? ------------------------------------
+       * The whole posture of the activation-link feature is that the click
+       * stays the user's, so "nothing navigated on its own" is an assertion,
+       * not an assumption. Every way a script could leave this page or open
+       * another one is counted here; the checks at the end require zeroes.
+       * window.location's own members are unforgeable and cannot be spied, so
+       * the href is compared before and after instead, and the Playwright
+       * driver watches for frame navigations from outside. */
+      window.__nav = { open: 0, anchorClicks: 0, unload: 0, href: location.href };
+
+      window.open = function () { window.__nav.open++; return null; };
+
+      const realAnchorClick = HTMLAnchorElement.prototype.click;
+      HTMLAnchorElement.prototype.click = function (...args) {
+        window.__nav.anchorClicks++;
+        return realAnchorClick.apply(this, args);
+      };
+
+      addEventListener('beforeunload', () => { window.__nav.unload++; });
+      addEventListener('pagehide', () => { window.__nav.unload++; });
+
+      /* ---- the clipboard ---------------------------------------------
+       * Stubbed rather than granted: the check is that the widget hands the
+       * FULL url to the clipboard API, not that Chrome's permission prompt
+       * behaves. __clipboardFails drives the other half — the fallback that
+       * has to work when the async API is refused. */
+      window.__clipboard = [];
+      window.__clipboardFails = false;
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: {
+          async writeText(text) {
+            if (window.__clipboardFails) throw new Error('refused');
+            window.__clipboard.push(text);
+          },
+        },
+      });
+    </script>
+
+    <script>
+      /* ================================================================
+       * 3. the fixtures — React-controlled, same automation ids as live
+       * ============================================================== */
+      const { useState, createElement: h } = React;
+
+      const SOURCE_TREE = {
+        'Employee Referral': [],
+        'Career Site': ['Acme Corp Career Section', 'Third-Party Recruiter'],
+        'Job Sites': ['Indeed', 'LinkedIn', 'Glassdoor'],
+        'Social Media': ['Facebook', 'X'],
+      };
+      const PHONE_TYPES = ['Select One', 'Home', 'Mobile', 'Work'];
+      const STATES = ['Select One', 'Maine', 'Maryland', 'Massachusetts', 'Michigan',
+        'Minnesota', 'Mississippi', 'Missouri', 'Montana', 'New York', 'Texas'];
+      const COUNTRIES = ['Select One', 'Canada', 'India', 'United Kingdom',
+        'United States of America'];
+
+      /** Real native click listeners on the submit buttons, not React's
+       *  synthetic ones — main.js calls btn.click() on a plain DOM node, and
+       *  the negative ("it never fired") is only worth anything if the thing
+       *  listening is the node itself. */
+      window.__submitClicks = { myInformation: 0, createAccount: 0 };
+      const countClicksOn = (key) => (el) => {
+        if (!el || el.__afWired) return;
+        el.__afWired = true;
+        el.addEventListener('click', () => { window.__submitClicks[key]++; });
+      };
+
+      function TextField({ id, label, value, onChange, type = 'text' }) {
+        return h('div', { 'data-automation-id': id },
+          h('label', null, label,
+            h('input', { type, value, onChange: (e) => onChange(e.target.value) })));
+      }
+
+      function Listbox({ id, label, value, options, onChange }) {
+        const [open, setOpen] = useState(false);
+        const popupId = `${id}-popup`;
+        return h('div', { 'data-automation-id': id },
+          h('label', null, label,
+            h('button', {
+              className: 'trigger', type: 'button',
+              'aria-controls': popupId, 'aria-expanded': open,
+              onClick: () => setOpen((o) => !o),
+            }, value || 'Select One')),
+          open && h('div', { className: 'popup', id: popupId, role: 'listbox' },
+            options.map((o) =>
+              h('div', {
+                key: o, role: 'option',
+                onClick: () => { onChange(o === 'Select One' ? '' : o); setOpen(false); },
+              }, o))));
+      }
+
+      /* The nested typeahead, kept because it is the slowest thing on the click
+         path and the timing measurements below are meaningless without it. */
+      function Multiselect({ id, label, value, onChange }) {
+        const [open, setOpen] = useState(false);
+        const [query, setQuery] = useState('');
+        const [category, setCategory] = useState(null);
+        const popupId = `${id}-popup`;
+
+        let options;
+        if (query) options = Object.values(SOURCE_TREE).flat()
+          .filter((o) => o.toLowerCase().includes(query.toLowerCase()));
+        else if (category) options = SOURCE_TREE[category];
+        else options = Object.keys(SOURCE_TREE);
+
+        return h('div', { 'data-automation-id': id },
+          h('label', null, label,
+            value
+              ? h('div', { 'data-automation-id': 'selectedItem' }, value)
+              : h('div', { 'data-automation-id': 'multiSelectContainer' },
+                  h('div', { 'data-automation-id': 'multiselectInputContainer' },
+                    h('input', {
+                      type: 'text', value: query, 'aria-controls': popupId,
+                      onFocus: () => setOpen(true),
+                      onClick: () => setOpen(true),
+                      onChange: (e) => { setQuery(e.target.value); setOpen(true); },
+                    })))),
+          open && !value && h('div', { className: 'popup', id: popupId, role: 'listbox' },
+            options.map((o) => {
+              const isCategory = !query && (SOURCE_TREE[o] ?? []).length > 0;
+              const text = h('p', {
+                'data-automation-id': 'promptOption', 'data-automation-label': o,
+              }, o);
+              return h('div', {
+                key: o, role: 'option', 'data-automation-id': 'menuItem',
+                onClick: () => { if (isCategory) { setCategory(o); return; } onChange(o); setOpen(false); },
+              },
+                isCategory
+                  ? [text, h('span', { key: 'c', className: 'wd-icon-chevron-right' }, '›')]
+                  : h('div', { 'data-automation-id': 'promptLeafNode' }, text));
+            })));
+      }
+
+      function MyInformation() {
+        const [s, setS] = useState({
+          firstName: '', lastName: '', address1: '', address2: '', city: '', zip: '',
+          phone: '', phoneType: '', state: '', country: 'United States of America', source: '',
+        });
+        const set = (k) => (v) => setS((p) => ({ ...p, [k]: v }));
+        window.__state = s;
+
+        return h('div', { 'data-automation-id': 'applyFlowMyInfoPage' },
+          h('div', { className: 'cols' },
+            h('fieldset', null, h('legend', null, 'My Information'),
+              h(Multiselect, { id: 'formField-source', label: 'How Did You Hear About Us?*',
+                               value: s.source, onChange: set('source') }),
+              h(Listbox, { id: 'formField-country', label: 'Country', value: s.country,
+                           options: COUNTRIES, onChange: set('country') }),
+              h(TextField, { id: 'formField-legalName--firstName', label: 'First Name*',
+                             value: s.firstName, onChange: set('firstName') }),
+              h(TextField, { id: 'formField-legalName--lastName', label: 'Last Name*',
+                             value: s.lastName, onChange: set('lastName') }),
+              h(TextField, { id: 'formField-addressLine1', label: 'Address Line 1',
+                             value: s.address1, onChange: set('address1') }),
+              h(TextField, { id: 'formField-addressLine2', label: 'Address Line 2',
+                             value: s.address2, onChange: set('address2') }),
+              h(TextField, { id: 'formField-city', label: 'City',
+                             value: s.city, onChange: set('city') }),
+              h(Listbox, { id: 'formField-countryRegion', label: 'State', value: s.state,
+                           options: STATES, onChange: set('state') }),
+              h(TextField, { id: 'formField-postalCode', label: 'Postal Code',
+                             value: s.zip, onChange: set('zip') }),
+              h(TextField, { id: 'formField-phoneNumber', label: 'Phone Number*',
+                             value: s.phone, onChange: set('phone') }),
+              h(Listbox, { id: 'formField-phoneType', label: 'Phone Device Type*',
+                           value: s.phoneType, options: PHONE_TYPES, onChange: set('phoneType') }),
+              h('button', {
+                className: 'footer', type: 'button',
+                'data-automation-id': 'pageFooterNextButton',
+                ref: countClicksOn('myInformation'),
+              }, 'Save and Continue')),
+            h('fieldset', null, h('legend', null, "React's internal state"),
+              h('pre', null, JSON.stringify(s, null, 2)))));
+      }
+
+      /* No confirmBeforeSubmit on this page in sites/workday.js, so with
+         autoSubmit on it is a one-click fill-and-submit. */
+      function CreateAccount() {
+        const [s, setS] = useState({ email: '', password: '', verify: '', terms: false });
+        const set = (k) => (v) => setS((p) => ({ ...p, [k]: v }));
+        window.__caState = s;
+
+        return h('div', { className: 'cols' },
+          h('fieldset', null, h('legend', null, 'Create Account'),
+            h(TextField, { id: 'email', label: 'Email Address*', type: 'text',
+                           value: s.email, onChange: set('email') }),
+            h(TextField, { id: 'password', label: 'Password*', type: 'password',
+                           value: s.password, onChange: set('password') }),
+            h(TextField, { id: 'verifyPassword', label: 'Verify New Password*', type: 'password',
+                           value: s.verify, onChange: set('verify') }),
+            h('div', { 'data-automation-id': 'createAccountCheckbox' },
+              h('label', null,
+                h('input', { type: 'checkbox', checked: s.terms,
+                             onChange: (e) => set('terms')(e.target.checked) }),
+                ' I accept the Terms and Conditions')),
+            h('button', {
+              className: 'footer', type: 'button',
+              'data-automation-id': 'createAccountSubmitButton',
+              ref: countClicksOn('createAccount'),
+            }, 'Create Account')),
+          h('fieldset', null, h('legend', null, "React's internal state"),
+            h('pre', null, JSON.stringify(s, null, 2))));
+      }
+
+      /* The screen some tenants show after Create Account. No form, no
+         selector worth harvesting, and the registry returns null for it — the
+         only thing on it is the sentence. Wrapped in <main> because that is
+         what Workday renders (see the captured page in the repo root), and
+         the detector reads the main content area rather than the document. */
+      function VerifyEmail() {
+        return h('main', null,
+          h('div', { 'data-automation-id': 'verifyEmailPage' },
+            h('fieldset', null, h('legend', null, 'Verify Email'),
+              h('h2', null, 'Verify Your Email'),
+              h('p', null, 'An email has been sent to you. Please verify your account.'),
+              h('p', null, "If you don't see it within a few minutes, check your spam folder."),
+              h('button', { className: 'footer', type: 'button' }, 'Return to Job Search'))));
+      }
+
+      function App() {
+        const [mode, setMode] = useState('myInformation');
+        window.__setMode = setMode;
+        if (mode === 'createAccount') return h(CreateAccount);
+        if (mode === 'verify') return h(VerifyEmail);
+        return h(MyInformation);
+      }
+
+      const reactRoot = ReactDOM.createRoot(document.getElementById('root'));
+      // flushSync so the fixture is in the DOM before main.js takes its first
+      // look; otherwise the first refresh() races React's async commit.
+      ReactDOM.flushSync(() => reactRoot.render(h(App)));
+    </script>
+
+    <script type="module">
+      /* ================================================================
+       * 4. load the real content scripts, in manifest order
+       *
+       * Cache-busted individually. A stale copy of one content script is an
+       * afternoon of debugging a bug that no longer exists.
+       * ============================================================== */
+
+      const MANIFEST_ORDER = [
+        '../content/00-namespace.js',
+        '../content/react-set.js',
+        '../content/match.js',
+        '../content/experience.js',
+        '../content/questions.js',
+        '../content/radio-groups.js',
+        '../content/free-text.js',
+        '../content/filler.js',
+        '../content/guards.js',
+        '../sites/workday.js',
+        '../sites/workday-experience.js',
+        '../sites/index.js',
+        '../content/registry.js',
+        '../content/widget.js',
+        '../content/pill.js',
+        // main.js is loaded last and separately — see below.
+      ];
+
+      const v = Date.now();
+      const load = (src) => new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = `${src}?v=${v}`;
+        s.onload = resolve;
+        s.onerror = () => reject(new Error(`failed to load ${src}`));
+        document.body.append(s);
+      });
+
+      for (const src of MANIFEST_ORDER) await load(src);
+
+      /* The one thing a harness cannot fake: the hostname. The adapter's
+         hostMatch is a real regex against a real location, and this page is
+         served from 127.0.0.1. Wrap rather than replace, so the registry's own
+         matching logic is still the thing under test. */
+      const realCurrentSite = AF.currentSite;
+      AF.currentSite = (hostname = 'acme.wd5.myworkdayjobs.com') => realCurrentSite(hostname);
+
+      const realResolveContext = AF.resolveContext;
+      AF.resolveContext = function () {
+        window.__counts.resolveContext++;
+        return realResolveContext.apply(this, arguments);
+      };
+
+      await load('../content/main.js');
+
+      /* Same treatment as AF.currentSite, and for the same reason: the
+         verification detector refuses anything that is not a Workday host, and
+         this page is served from 127.0.0.1. Wrapped, not replaced — the real
+         host test still runs, the checks below just get to say what the host
+         is. main.js looks the function up on AF at call time, so it picks this
+         up. */
+      const realIsVerificationScreen = AF.isVerificationScreen;
+      AF.isVerificationScreen = (hostname = 'acme.wd5.myworkdayjobs.com', area = null) =>
+        realIsVerificationScreen(hostname, area);
+
+      /* ================================================================
+       * 5. checks
+       * ============================================================== */
+
+      const lines = [];
+      let failed = 0;
+      const check = (label, actual, expected) => {
+        const ok = JSON.stringify(actual) === JSON.stringify(expected);
+        if (!ok) failed++;
+        lines.push(`${ok ? '  ok  ' : ' FAIL '} ${label}` +
+          (ok ? '' : `\n         got  ${JSON.stringify(actual)}\n         want ${JSON.stringify(expected)}`));
+      };
+      const note = (text) => lines.push(`  --   ${text}`);
+
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+      async function waitUntil(fn, timeoutMs = 20000, label = 'condition') {
+        const deadline = Date.now() + timeoutMs;
+        for (;;) {
+          const v = fn();
+          if (v) return v;
+          if (Date.now() > deadline) throw new Error(`timed out waiting for ${label}`);
+          await sleep(50);
+        }
+      }
+
+      /* --- reaching into the real widget --- */
+
+      const shadow = () => document.getElementById('af-widget-host')?.shadowRoot ?? null;
+      const actionBtn = () => shadow()?.getElementById('action') ?? null;
+      const actionLabel = () => {
+        const b = actionBtn();
+        if (!b || b.classList.contains('hidden')) return null;
+        return b.textContent;
+      };
+      const widgetMessage = () => {
+        const m = shadow()?.getElementById('msg');
+        return !m || m.classList.contains('hidden') ? null : m.textContent;
+      };
+
+      /** The activation-link block, or null while it is hidden. */
+      const linkBlock = () => {
+        const el = shadow()?.getElementById('link');
+        return !el || el.classList.contains('hidden') ? null : el;
+      };
+      const linkPart = (id) => shadow()?.getElementById(id) ?? null;
+
+      /** Every runtime message of one type, for counting round trips. */
+      const sentOfType = (type) => window.__sent.filter((m) => m.type === type);
+
+      /** A real click on the real button. Composed, because the button lives in
+       *  a shadow root and a non-composed event would not behave like a user's. */
+      function clickWidget() {
+        const b = actionBtn();
+        if (!b) throw new Error('widget action button is not on screen');
+        b.dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true, cancelable: true }));
+      }
+
+      /** Click, then wait for onAction() to put the button back. `busy` is
+       *  private to main.js; "Working…" and disabled are how it surfaces. */
+      async function clickAndSettle(timeoutMs = 40000) {
+        const t0 = performance.now();
+        clickWidget();
+        await waitUntil(() => actionLabel() === 'Working…' || actionBtn()?.disabled, 3000,
+          'the widget to go busy');
+        await waitUntil(() => actionLabel() !== 'Working…' && !actionBtn()?.disabled,
+          timeoutMs, 'the widget to come back');
+        await sleep(120); // let the trailing paint land
+        return Math.round(performance.now() - t0);
+      }
+
+      /* --- what a correct fill looks like --- */
+
+      const WANT = {
+        firstName: 'Testy', lastName: 'McTestface', address1: '123 Example Street',
+        address2: 'Unit 7', city: 'Springfield', zip: '00000', phone: '5555550100',
+        state: 'Michigan', country: 'United States of America', phoneType: 'Mobile',
+        source: 'Acme Corp Career Section',
+      };
+      const stateDiff = (want, got) => Object.entries(want)
+        .filter(([k, v]) => got[k] !== v)
+        .map(([k, v]) => `${k}: got "${got[k]}" want "${v}"`);
+
+      async function run() {
+        /* ---- 0. the widget mounts itself ---- */
+
+        await waitUntil(() => actionBtn(), 10000, 'the widget to mount');
+        check('the widget mounts itself on a page the registry recognises',
+          !!document.getElementById('af-widget-host'), true);
+        check('and it asked the worker for status first',
+          window.__sent.some((m) => m.type === 'status'), true);
+
+        /* ---- 1. the button must not promise a submit it will not do ---- */
+
+        check('1. on My Information the button reads "Fill", not "Fill & Submit" ' +
+              '(confirmBeforeSubmit, even with autoSubmit on)',
+          actionLabel(), 'Fill');
+
+        /* ---- 2. one click fills and does NOT submit ---- */
+
+        const before = { ...window.__counts };
+        const fillMs = await clickAndSettle();
+        const duringFill = {
+          resolveContext: window.__counts.resolveContext - before.resolveContext,
+          observerCallbacks: window.__counts.observerCallbacks - before.observerCallbacks,
+          querySelectorAll: window.__counts.querySelectorAll - before.querySelectorAll,
+        };
+
+        check('2. one click fills every field, and React agrees',
+          stateDiff(WANT, window.__state), []);
+        check('2. and the submit button was never clicked',
+          window.__submitClicks.myInformation, 0);
+        check('2. getFillData was requested exactly once',
+          window.__sent.filter((m) => m.type === 'getFillData').length, 1);
+
+        /* ---- 3. the widget now asks to be looked at ---- */
+
+        check('3. after the fill the button reads "Submit"', actionLabel(), 'Submit');
+        check('3. and the message says to review it first',
+          /review it, then click submit/i.test(widgetMessage() ?? ''), true);
+
+        /* ---- the observer, idling ----
+         * The widget's host element lives in the document and the observer
+         * watches documentElement with subtree, so the question is whether our
+         * own writes feed the loop that triggered them. */
+
+        await sleep(600); // let the debounce from the fill drain
+        const idleStart = { ...window.__counts };
+        await sleep(5000);
+        const idle = {
+          observerCallbacks: window.__counts.observerCallbacks - idleStart.observerCallbacks,
+          observerRecords: window.__counts.observerRecords - idleStart.observerRecords,
+          resolveContext: window.__counts.resolveContext - idleStart.resolveContext,
+        };
+
+        note(`fill took ${fillMs}ms`);
+        note(`during one fill: AF.resolveContext ${duringFill.resolveContext}x, ` +
+             `observer callbacks ${duringFill.observerCallbacks}x, ` +
+             `document.querySelectorAll ${duringFill.querySelectorAll}x`);
+        note(`over 5 idle seconds after the fill: observer callbacks ` +
+             `${idle.observerCallbacks}, mutation records ${idle.observerRecords}, ` +
+             `AF.resolveContext ${idle.resolveContext}`);
+
+        check('the observer does not feed itself off the widget\'s own DOM writes ' +
+              '(0 callbacks over 5 idle seconds)', idle.observerCallbacks, 0);
+
+        /* ---- 4. the second click submits, once ---- */
+
+        await clickAndSettle();
+        check('4. the second click runs the guards and clicks submit exactly once',
+          window.__submitClicks.myInformation, 1);
+        check('4. and the widget says so', /submitted/i.test(widgetMessage() ?? ''), true);
+
+        /* ---- 4b. the source answer is remembered for this company ---- */
+
+        const pickSaves = () => window.__sent.filter((m) => m.type === 'savePick');
+        check('4b. submit remembers the source answer under this hostname',
+          pickSaves().map(({ hostname, key, value }) => ({ hostname, key, value })),
+          [{ hostname: location.hostname, key: 'source', value: 'Acme Corp Career Section' }]);
+
+        // main.js schedules a 2.5s follow-through after a submit; let it land so
+        // its say() cannot overwrite a later check's message.
+        await sleep(2900);
+
+        /* ---- 7. clicking again does not submit a second time ---- */
+
+        await clickAndSettle();
+        check('7. re-clicking after a completed submit does not submit twice',
+          window.__submitClicks.myInformation, 1);
+        check('7. it re-fills and asks for confirmation again instead',
+          actionLabel(), 'Submit');
+        check('7. the re-fill was handed the remembered source answer',
+          window.__picksStore.source, 'Acme Corp Career Section');
+
+        /* ---- 5. a field emptied after the fill blocks the submit ----
+         * Written through setNativeValue, the way a person deleting the text
+         * would leave it — React's state really is empty. The fill report still
+         * says "city: filled", so only a guard that re-reads the DOM catches it. */
+
+        const cityInput = document.querySelector('[data-automation-id="formField-city"] input');
+        AF.setNativeValue(cityInput, '');
+        await sleep(150);
+        check('5. the field really is empty in React state', window.__state.city, '');
+
+        await clickAndSettle();
+        check('5. a required field emptied after the fill blocks the submit',
+          window.__submitClicks.myInformation, 1);
+        check('5. and the widget names the field', /city/i.test(widgetMessage() ?? ''), true);
+        check('5. an unchanged remembered answer is not written again',
+          pickSaves().length, 1);
+
+        /* ---- 6. a page with no confirmBeforeSubmit, autoSubmit on ---- */
+
+        window.__setMode('createAccount');
+        await waitUntil(() => document.querySelector('[data-automation-id="verifyPassword"]'),
+          5000, 'the Create Account fixture');
+        // The page swap reaches main.js through the MutationObserver, debounced
+        // by 300ms — the same way a Workday SPA navigation does.
+        await waitUntil(() => actionLabel() === 'Fill & Submit', 10000,
+          'the widget to notice the new page');
+
+        check('6. on Create Account the same settings give "Fill & Submit"',
+          actionLabel(), 'Fill & Submit');
+
+        await clickAndSettle();
+        check('6. one click fills the credential into React state',
+          [window.__caState.email, window.__caState.verify, window.__caState.terms],
+          [CREDENTIAL.email, CREDENTIAL.password, true]);
+        check('6. and submits in the same click',
+          window.__submitClicks.createAccount, 1);
+        check('6. without ever touching the other page\'s submit button',
+          window.__submitClicks.myInformation, 1);
+
+        /* ================================================================
+         * 8. the verification screen, and the Gmail lookup in the widget
+         * ============================================================== */
+
+        /* ---- 8a. the detector on its own ----
+         * Mounted fixtures, not strings: the detector reads rendered text and
+         * confirms the block is actually on screen, so a detached node would
+         * come back false for the wrong reason. */
+
+        const WD_HOST = 'acme.wd5.myworkdayjobs.com';
+        const detectors = document.getElementById('detectors');
+        const fixture = (html) => {
+          const el = document.createElement('div');
+          el.innerHTML = html;
+          detectors.append(el);
+          return el;
+        };
+
+        const verifyFixture = fixture(`
+          <div data-automation-id="verifyEmailPage">
+            <h2>Verify Your Email</h2>
+            <p>An email has been sent to you. Please verify your account.</p>
+            <p>If you don't see it within a few minutes, check your spam folder.</p>
+          </div>`);
+
+        const myInfoLike = fixture(`
+          <div data-automation-id="applyFlowMyInfoPage">
+            <h2>My Information</h2>
+            <label>Email Address*<input type="text" /></label>
+            <label>Verify New Password*<input type="password" /></label>
+            <p>How Did You Hear About Us?</p>
+          </div>`);
+
+        const wordEmailOnly = fixture(`
+          <div>
+            <h2>Application submitted</h2>
+            <p>Thanks. We will email you about your application status, and your
+               email address is shown under My Account.</p>
+          </div>`);
+
+        /* Two ordinary sentences that say nothing apart, and read as
+           "…your email Sent applications…" the moment the page is flattened
+           into one string. The detector tests one rendered block at a time, so
+           it cannot match a sentence nobody wrote. */
+        const acrossBlocks = fixture(`
+          <div>
+            <p>Update your email</p>
+            <p>Sent applications appear here.</p>
+          </div>`);
+
+        const hiddenFixture = fixture(`
+          <div hidden>
+            <p>An email has been sent to you. Please verify your account.</p>
+          </div>`);
+
+        check('8. the detector matches a real verification screen',
+          AF.isVerificationScreen(WD_HOST, verifyFixture), true);
+        check('8. and not an ordinary My Information page',
+          AF.isVerificationScreen(WD_HOST, myInfoLike), false);
+        check('8. and not a page that merely contains the word "email"',
+          AF.isVerificationScreen(WD_HOST, wordEmailOnly), false);
+        check('8. and does not stitch a phrase out of two separate blocks',
+          AF.isVerificationScreen(WD_HOST, acrossBlocks), false);
+        check('8. text that is not on screen is not something the user was told',
+          AF.isVerificationScreen(WD_HOST, hiddenFixture), false);
+        check('8. the same screen off a Workday host is not one',
+          AF.isVerificationScreen('careers.example.com', verifyFixture), false);
+        check('8. nor on a host that merely ends with the string',
+          AF.isVerificationScreen('myworkdayjobs.com.evil.example', verifyFixture), false);
+
+        // Out of the document before anything reads the page for real: they are
+        // Workday's words sitting on a page that is not Workday's.
+        detectors.replaceChildren();
+
+        /* ---- 8b. the action appears only when Gmail is connected ---- */
+
+        window.__gmail = { configured: true, connected: false };
+        window.__setMode('verify');
+        await waitUntil(() => document.querySelector('[data-automation-id="verifyEmailPage"]'),
+          5000, 'the verification fixture');
+        await waitUntil(() => /gmail/i.test(widgetMessage() ?? ''), 10000,
+          'the widget to notice the verification screen');
+
+        check('8. with Gmail not connected there is no action to click',
+          actionLabel(), null);
+        check('8. just one line pointing at the popup',
+          /not connected.*popup/i.test(widgetMessage() ?? ''), true);
+
+        /* Away and back, the way someone who has just connected Gmail in the
+           popup arrives: the status is re-read every time the screen appears,
+           and never on an ordinary page. */
+        window.__gmail = { configured: true, connected: true };
+        window.__setMode('myInformation');
+        await waitUntil(() => actionLabel() === 'Fill', 10000, 'the form fixture back');
+        window.__setMode('verify');
+        await waitUntil(() => actionLabel() === 'Find the verification link', 10000,
+          'the widget to offer the lookup');
+
+        check('8. connected, the action appears',
+          actionLabel(), 'Find the verification link');
+        check('8. and gmailStatus was asked only on the verification screen, once each time',
+          sentOfType('gmailStatus').length, 2);
+
+        /* ---- 8c. the poll, Stop, and whose timings these are ---- */
+
+        const findsBefore = sentOfType('gmailFindLink').length;
+        clickWidget();
+        await waitUntil(() => sentOfType('gmailFindLink').length > findsBefore, 3000,
+          'the first lookup to reach the worker');
+
+        check('8. clicking sends gmailFindLink to the worker',
+          sentOfType('gmailFindLink').length - findsBefore >= 1, true);
+        check('8. the action becomes Stop while it polls', actionLabel(), 'Stop looking');
+        check('8. with progress the user can read',
+          /looking for the activation email/i.test(widgetMessage() ?? ''), true);
+
+        clickWidget(); // Stop
+        const afterStop = sentOfType('gmailFindLink').length;
+        check('8. Stop puts the button back', actionLabel(), 'Find the verification link');
+        check('8. and says so', /stopped/i.test(widgetMessage() ?? ''), true);
+        await sleep(400);
+        check('8. and the poll really stopped — no lookup after it',
+          sentOfType('gmailFindLink').length, afterStop);
+
+        /* Nothing to find, for the whole window. The run must take about as
+           long as the timeout the WORKER reported. */
+        const pollStart = performance.now();
+        clickWidget();
+        await waitUntil(() => actionLabel() === 'Find the verification link', 5000,
+          'the poll to give up');
+        const pollMs = Math.round(performance.now() - pollStart);
+        const polls = sentOfType('gmailFindLink').length - afterStop;
+
+        note(`the no-match poll ran ${pollMs}ms over ${polls} lookups, on the ` +
+             `60ms/300ms timings the stubbed worker reported`);
+        check('8. the poll uses the timings the worker reports, not a copy of its own ' +
+              '(a hardcoded 5s/90s could not have finished here)', pollMs < 3000, true);
+        check('8. and it polls rather than asking once', polls >= 2, true);
+        check('8. then says what to do next',
+          /no activation email in the last hour/i.test(widgetMessage() ?? ''), true);
+
+        /* ---- 8d. the result, rendered in the widget ---- */
+
+        const URL_FULL =
+          'https://acme.wd5.myworkdayjobs.com/en-US/Careers_External/activate/' +
+          '9f3c1d2b7a6e4f508c1b2d3e4f5a6b7c8d9e0f1a?redirect=%2Fen-US%2FCareers_External';
+
+        window.__findReply = () => ({
+          ok: true,
+          reason: 'FOUND',
+          link: {
+            url: URL_FULL,
+            from: 'Acme Careers <no-reply@acme.invalid>',
+            subject: 'Activate your candidate account',
+            receivedAt: new Date(Date.now() - 12000).toISOString(),
+            tenant: 'acme.wd5.myworkdayjobs.com',
+            matchedTenant: true,
+          },
+        });
+
+        clickWidget();
+        await waitUntil(() => linkBlock(), 5000, 'the link to appear in the widget');
+
+        const shownUrl = linkPart('linkUrl');
+        check('8. the link is shown in the widget', !!linkBlock(), true);
+        check('8. the whole address is available, not silently shortened',
+          shownUrl.title, URL_FULL);
+        check('8. shown cut from the middle, with an ellipsis that says so',
+          [shownUrl.textContent.includes('…'),
+           shownUrl.textContent !== URL_FULL,
+           shownUrl.textContent.startsWith(URL_FULL.slice(0, 24)),
+           shownUrl.textContent.endsWith(URL_FULL.slice(-24))],
+          [true, true, true, true]);
+        check('8. with the sender and how old the mail is',
+          linkPart('linkMeta').textContent,
+          'Acme Careers <no-reply@acme.invalid> · just now');
+        check('8. and the widget says to check it first',
+          /check the address/i.test(widgetMessage() ?? ''), true);
+
+        /* ---- 8e. Copy ---- */
+
+        const clickPart = (id) => linkPart(id).dispatchEvent(
+          new MouseEvent('click', { bubbles: true, composed: true, cancelable: true }));
+
+        clickPart('linkCopy');
+        await waitUntil(() => window.__clipboard.length, 3000, 'the clipboard write');
+        check('8. Copy puts the full url on the clipboard, not the truncated text',
+          window.__clipboard.at(-1), URL_FULL);
+        check('8. and says it copied',
+          /copied/i.test(linkPart('linkNote').textContent ?? ''), true);
+
+        window.__clipboardFails = true;
+        clickPart('linkCopy');
+        await waitUntil(() => /ctrl\+c/i.test(linkPart('linkNote').textContent ?? ''), 3000,
+          'the copy fallback');
+        const selected = String(shadow().getSelection?.() ?? window.getSelection() ?? '');
+        check('8. a refused clipboard selects the address instead and says press Ctrl+C',
+          [window.__clipboard.length, selected], [1, shownUrl.textContent]);
+        window.__clipboardFails = false;
+
+        /* ---- 8f. Open is the user's click, and only the user's ---- */
+
+        const openEl = linkPart('linkOpen');
+        check('8. Open is a real anchor with the right href',
+          [openEl.tagName, openEl.getAttribute('href'),
+           openEl.getAttribute('target'), openEl.getAttribute('rel')],
+          ['A', URL_FULL, '_blank', 'noopener noreferrer']);
+        check('8. and NOTHING navigated on its own — no window.open, no ' +
+              'programmatic anchor click, no unload, same url as at load',
+          [window.__nav.open, window.__nav.anchorClicks, window.__nav.unload,
+           location.href === window.__nav.href],
+          [0, 0, 0, true]);
+
+        /* ---- 8g. it goes away when the user moves on ---- */
+
+        window.__setMode('myInformation');
+        await waitUntil(() => actionLabel() === 'Fill', 10000, 'the form fixture back');
+
+        check('8. moving on takes the link with it', !!linkBlock(), false);
+        check('8. and leaves no stale address on the Open anchor',
+          linkPart('linkOpen').hasAttribute('href'), false);
+        check('8. the ordinary flow is undisturbed — still "Fill", still one submit each',
+          [actionLabel(), window.__submitClicks.myInformation, window.__submitClicks.createAccount],
+          ['Fill', 1, 1]);
+
+        /* ---- the message log, for the record ---- */
+
+        note(`runtime messages sent, in order: ${window.__sent.map((m) => m.type).join(', ')}`);
+        note(`totals — AF.resolveContext ${window.__counts.resolveContext}x, ` +
+             `observer callbacks ${window.__counts.observerCallbacks}x, ` +
+             `document.querySelectorAll ${window.__counts.querySelectorAll}x`);
+      }
+
+      /* One run per page load. main.js keeps its state in closure variables with
+         no way in from outside, so "run again" honestly means "reload". */
+      const promise = run().then(
+        () => {
+          const passed = lines.filter((l) => l.startsWith('  ok')).length;
+          const v = document.getElementById('verdict');
+          v.className = failed ? 'fail' : 'pass';
+          v.textContent = `${passed} passed, ${failed} failed`;
+          document.getElementById('out').textContent =
+            lines.join('\n') + `\n\n${passed} passed, ${failed} failed`;
+          return failed;
+        },
+        (err) => {
+          failed++;
+          lines.push(` FAIL  harness threw: ${err?.message ?? err}`);
+          const passed = lines.filter((l) => l.startsWith('  ok')).length;
+          const v = document.getElementById('verdict');
+          v.className = 'fail';
+          v.textContent = `${passed} passed, ${failed} failed`;
+          document.getElementById('out').textContent =
+            lines.join('\n') + `\n\n${passed} passed, ${failed} failed`;
+          return failed;
+        }
+      );
+
+      window.__afRun = () => promise; // for the Playwright driver
+      document.getElementById('runBtn').addEventListener('click', () => location.reload());
+    </script>
+  </body>
+</html>
