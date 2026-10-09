@@ -17,6 +17,7 @@ const K_PROFILE = 'af_profile'; // plaintext personal details
 const K_VAULT = 'af_vault';     // { default: entry|null, overrides: { host: entry } }
 const K_SETTINGS = 'af_settings';
 const K_ANSWERS = 'af_answers'; // { <question signature>: { answer, seen, updated } }
+const K_PICKS = 'af_picks';     // { <hostname>: { <picker key>: { value, updated } } }
 const SK_KEY = 'af_session_key'; // raw AES key, base64, memory only
 
 /**
@@ -139,6 +140,43 @@ export async function forgetAnswer(signature) {
   const answers = await getAnswers();
   delete answers[signature];
   return setAnswers(answers);
+}
+
+/* ------------------------------------------------------------------ */
+/* per-company picker memory                                           */
+/* ------------------------------------------------------------------ */
+
+/**
+ * What you picked in a company-worded dropdown, keyed by hostname.
+ *
+ * "How Did You Hear About Us?" has a different option list at every tenant —
+ * different wording, different nesting — so no profile value can answer it
+ * everywhere. Whatever was selected at submit is remembered for that host and
+ * offered first next time. Scoped by hostname on purpose: one company's option
+ * means nothing on another's list.
+ */
+export const listPicks = () => getLocal(K_PICKS, {});
+
+/** { <picker key>: value } for one host — {} when nothing is remembered. */
+export async function getPicks(host) {
+  const entry = (await listPicks())[host] ?? {};
+  return Object.fromEntries(Object.entries(entry).map(([k, v]) => [k, v.value]));
+}
+
+export async function savePick(host, key, value) {
+  const clean = String(value ?? '').trim();
+  if (!host || !key || !clean) return;
+  const picks = await listPicks();
+  picks[host] = { ...picks[host], [key]: { value: clean, updated: Date.now() } };
+  return setLocal(K_PICKS, picks);
+}
+
+export async function forgetPick(host, key) {
+  const picks = await listPicks();
+  if (!picks[host]) return;
+  delete picks[host][key];
+  if (!Object.keys(picks[host]).length) delete picks[host];
+  return setLocal(K_PICKS, picks);
 }
 
 export async function getSettings() {

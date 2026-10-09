@@ -90,7 +90,9 @@ async function boot() {
   }
 
   showView('mainView');
-  await Promise.all([loadProfile(), loadCredentials(), loadSettings(), loadAnswers()]);
+  await Promise.all([
+    loadProfile(), loadCredentials(), loadSettings(), loadAnswers(), loadPicks(), loadGmail(),
+  ]);
 }
 
 /* ------------------------------------------------------------------ */
@@ -278,6 +280,63 @@ $('forgetAllBtn').addEventListener('click', async () => {
   loadAnswers();
   toast('Answers cleared.', 'ok');
 });
+
+/* ------------------------------------------------------------------ */
+/* per-company picks                                                   */
+/* ------------------------------------------------------------------ */
+
+const PICK_LABELS = { source: 'How did you hear' };
+
+async function loadPicks() {
+  const res = await send({ type: 'listPicks' });
+  const list = $('picksList');
+  list.innerHTML = '';
+
+  const rows = Object.entries(res.picks ?? {}).flatMap(([host, keys]) =>
+    Object.entries(keys).map(([key, entry]) => ({ host, key, ...entry }))
+  );
+
+  if (!rows.length) {
+    const p = document.createElement('p');
+    p.className = 'fine';
+    p.textContent = 'Nothing yet. Submit a My Information page and its answer shows up here.';
+    list.append(p);
+    return;
+  }
+
+  rows.sort((a, b) => (b.updated ?? 0) - (a.updated ?? 0));
+
+  for (const { host, key, value } of rows) {
+    const row = document.createElement('div');
+    row.className = 'item';
+
+    const who = document.createElement('div');
+    who.className = 'who';
+
+    const scope = document.createElement('span');
+    scope.className = 'scope';
+    scope.textContent = host;
+    scope.title = host;
+
+    const val = document.createElement('span');
+    val.className = 'email';
+    val.textContent = `${PICK_LABELS[key] ?? key}: ${value}`;
+
+    who.append(scope, val);
+    row.append(who);
+
+    const del = document.createElement('button');
+    del.textContent = '×';
+    del.title = 'Forget this answer';
+    del.addEventListener('click', async () => {
+      await send({ type: 'forgetPick', hostname: host, key });
+      loadPicks();
+    });
+    row.append(del);
+
+    list.append(row);
+  }
+}
 
 /* ------------------------------------------------------------------ */
 /* credentials                                                        */

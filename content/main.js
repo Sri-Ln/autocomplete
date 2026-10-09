@@ -703,6 +703,7 @@
           (await ctx.page.customFill.call(ctx.page, values, report, {
             profile: data.profile,
             credential: data.credential,
+            remembered: data.picks ?? {},
           })) ?? report;
       } catch (err) {
         AF.log('customFill threw', err);
@@ -723,7 +724,8 @@
       AF.log('answerQuestions threw', err);
     }
 
-    lastRun = { values, report, questions };
+    lastRun = { values, report, questions, picks: data.picks ?? {} };
+
     /* Two clicks, either because the user asked for it globally or because this
      * page always gets them. See `confirmBeforeSubmit` in sites/workday.js: a
      * page can insist on a review step regardless of the setting. */
@@ -767,6 +769,29 @@
     }
   }
 
+  /**
+   * Remember this company's dropdown answers — whatever the adapter reports as
+   * selected right now, matched by us or picked by hand. Writes only what
+   * changed, so a remembered answer that filled cleanly costs no round trip.
+   * Returns what is on the page, so the caller can see which pickers are now
+   * answered.
+   */
+  async function capturePicksNow() {
+    if (typeof ctx.page?.readRemembered !== 'function') return {};
+    let current = {};
+    try {
+      current = ctx.page.readRemembered() ?? {};
+      for (const [key, value] of Object.entries(current)) {
+        if (lastRun?.picks?.[key] === value) continue;
+        await send({ type: 'savePick', hostname: location.hostname, key, value });
+        AF.log(`remembered ${key} for ${location.hostname}:`, value);
+      }
+    } catch (err) {
+      AF.log('capturePicks failed', err);
+    }
+    return current;
+  }
+
   /** One clause about the Yes/No questions, or nothing if there were none. */
   function describeQuestions(q) {
     const parts = [];
@@ -783,11 +808,18 @@
      * we can read a stale disabled-state off the submit button. */
     await new Promise((r) => setTimeout(r, 250));
 
+    /* Read the remembered dropdowns off the page first. A picker that failed
+     * during fill may since have been answered by hand — that is the whole
+     * point of leaving it for you — and that answer is what gets remembered
+     * for this company. */
+    const picked = await capturePicksNow();
+
     /* A dropdown we could not set is a hard stop. allFieldsLanded() only reads
      * text inputs, so without this a failed "How Did You Hear About Us?" would
-     * sail through and submit the form with a required question unanswered. */
+     * sail through and submit the form with a required question unanswered.
+     * Unless you have answered it yourself since. */
     const pickerFailures = (lastRun.report?.failed ?? []).filter(
-      (key) => ctx.page.pickers && key in ctx.page.pickers
+      (key) => ctx.page.pickers && key in ctx.page.pickers && !picked[key]
     );
     if (pickerFailures.length) {
       awaitingSubmitConfirm = false;

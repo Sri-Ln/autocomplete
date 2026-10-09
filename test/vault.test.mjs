@@ -123,5 +123,37 @@ check('session key is not on disk', JSON.stringify(disk).includes('RAWKEY'), fal
 await S.clearSessionKey();
 check('session key clears', await S.getSessionKeyRaw(), null);
 
+/* per-company picker memory — "How Did You Hear About Us?" is worded per
+   tenant, so what you picked at one company is only ever served back there */
+
+check('no picks for an unseen tenant', await S.getPicks('initrode.wd3.myworkdayjobs.com'), {});
+
+await S.savePick('initrode.wd3.myworkdayjobs.com', 'source', 'Initrode Careers Website');
+check(
+  'a pick reads back for its own tenant',
+  (await S.getPicks('initrode.wd3.myworkdayjobs.com')).source,
+  'Initrode Careers Website'
+);
+check('a pick never leaks to another tenant', await S.getPicks('nvidia.wd5.myworkdayjobs.com'), {});
+
+await S.savePick('initrode.wd3.myworkdayjobs.com', 'source', 'LinkedIn');
+check('re-picking overwrites', (await S.getPicks('initrode.wd3.myworkdayjobs.com')).source, 'LinkedIn');
+
+await S.savePick('initrode.wd3.myworkdayjobs.com', 'source', '   ');
+check('a blank pick is ignored', (await S.getPicks('initrode.wd3.myworkdayjobs.com')).source, 'LinkedIn');
+
+await S.savePick('nvidia.wd5.myworkdayjobs.com', 'source', 'Indeed');
+const all = await S.listPicks();
+check('listPicks covers every tenant', Object.keys(all).sort(), [
+  'initrode.wd3.myworkdayjobs.com',
+  'nvidia.wd5.myworkdayjobs.com',
+]);
+check('listPicks keeps the value', all['nvidia.wd5.myworkdayjobs.com'].source.value, 'Indeed');
+
+await S.forgetPick('initrode.wd3.myworkdayjobs.com', 'source');
+check('forgetPick removes it', await S.getPicks('initrode.wd3.myworkdayjobs.com'), {});
+check('forgetPick drops the empty tenant', 'initrode.wd3.myworkdayjobs.com' in (await S.listPicks()), false);
+check('forgetPick leaves other tenants', (await S.getPicks('nvidia.wd5.myworkdayjobs.com')).source, 'Indeed');
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);
