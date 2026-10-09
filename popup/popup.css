@@ -386,6 +386,49 @@ button.danger:hover {
   gap: 11px;
 }
 
+/* The same column rhythm as .panel, for a group nested inside one. It cannot
+ * just reuse .panel: the tab switcher hides every element carrying that class,
+ * so a .panel inside a .panel would vanish on the next tab click. */
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+
+/* Numbered setup steps inside a .card. The default <ol> indent is too deep for
+ * a 330px popup — it costs a third of the line to the marker. */
+ol.steps {
+  margin: 8px 0 0;
+  padding-left: 17px;
+}
+ol.steps li {
+  margin-bottom: 4px;
+}
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10.5px;
+  color: var(--text-dim);
+}
+
+/* The activation URL: one ~100-character unbreakable token, so it needs an
+ * explicit break or the popup grows a horizontal scrollbar. Shown in full
+ * rather than truncated, because the whole point is that you can read where
+ * the link goes before you click it. */
+.urlbox {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--bg-sunken);
+  border: 1px solid var(--line);
+  color: var(--text-dim);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10.5px;
+  line-height: 1.5;
+  word-break: break-all;
+  max-height: 96px;
+  overflow-y: auto;
+}
+
 /* ── saved credential list ── */
 
 .list {

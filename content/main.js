@@ -5,6 +5,8 @@
  *   1. Work out which site/page we're on (registry.js).
  *   2. Mount the floating widget and keep it in sync as the SPA navigates.
  *   3. On click: unlock if needed → fill → run guards → submit.
+ *   4. On the pages the registry knows nothing about: offer the visa
+ *      explanation, and offer to find the activation link Workday just emailed.
  *
  * Deliberately NOT here: any Workday-specific selector (those live in
  * sites/workday.js) and any crypto (that lives in the service worker).
@@ -170,6 +172,260 @@
   }
 
   /* ---------------------------------------------------------------- */
+  /* the verification screen                                          */
+  /* ---------------------------------------------------------------- */
+
+  /**
+   * "An email has been sent to you. Please verify your account."
+   *
+   * Some tenants show this after you create an account and some do not — it is
+   * a per-tenant setting, so it is not a page the registry can carry: there is
+   * no form on it, nothing to fill, and no selector worth harvesting. It is
+   * recognised by what it says instead, which is the weakest kind of detection
+   * in this codebase and is fenced accordingly:
+   *
+   *   - only on a Workday host. A hostname suffix match, so
+   *     `myworkdayjobs.com.evil.example` is not one.
+   *   - only against text inside the tenant's own main content area, never the
+   *     whole document. Our widget's text would otherwise be part of the
+   *     evidence, and it is our own words.
+   *   - block by block, not as one page-wide blob. Concatenating everything on
+   *     screen can synthesise "…email" + "sent…" into a phrase that was never
+   *     written anywhere, and a match on a sentence nobody wrote is exactly the
+   *     false positive this must not produce.
+   *
+   * A miss costs the user one trip to the popup, which already does this. A
+   * false positive offers to search their mail on a page that has nothing to do
+   * with verification. So every doubtful case is resolved as "not it".
+   */
+  const VERIFY_HOST = /(^|\.)myworkdayjobs\.com$/i;
+
+  const VERIFY_TEXT =
+    /email (?:has been )?sent|verify your (?:email|account)|check your (?:email|inbox)/i;
+
+  /** The tenant's content. Falls back to <body> when the page marks none. */
+  const MAIN_AREA = 'main, [role="main"], [data-automation-id="applyFlowPage"]';
+
+  /** Longer than this and it is not a prompt, it is a page. See the note above
+   *  about page-wide blobs. */
+  const MAX_BLOCK = 240;
+
+  /** Never read as page text: our own UI, and nodes that are not prose. */
+  const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE']);
+  const OUR_HOSTS = '#af-widget-host, #af-pill-host';
+
+  /** Nearest ancestor that renders as its own line of text. A tag list rather
+   *  than getComputedStyle: this runs on every DOM change and a style read per
+   *  text node would be a layout cost we do not need. */
+  const BLOCK_TAGS = new Set([
+    'P', 'DIV', 'LI', 'TD', 'TH', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6',
+    'SECTION', 'ARTICLE', 'MAIN', 'HEADER', 'FOOTER', 'ASIDE', 'LABEL',
+    'BUTTON', 'A', 'BLOCKQUOTE', 'FIGCAPTION', 'DD', 'DT', 'BODY',
+  ]);
+
+  function blockOf(node) {
+    let el = node.parentElement;
+    while (el && !BLOCK_TAGS.has(el.tagName)) el = el.parentElement;
+    return el;
+  }
+
+  /** Cheap and deliberately strict — anything we cannot confirm is on screen
+   *  does not count as something the user was told. */
+  function isVisible(el) {
+    if (!el || !el.isConnected) return false;
+    if (el.closest('[hidden], [aria-hidden="true"]')) return false;
+    if (!el.getClientRects().length) return false;
+    const style = getComputedStyle(el);
+    return style.visibility !== 'hidden' && style.opacity !== '0';
+  }
+
+  /**
+   * Is this the "we emailed you a link" screen?
+   *
+   * @param hostname  overridable so the harness can drive it; the default is
+   *                  the real one, same as AF.currentSite.
+   * @param area      the element to read. Defaults to the page's main content.
+   */
+  AF.isVerificationScreen = function (hostname = location.hostname, area = null) {
+    if (!VERIFY_HOST.test(String(hostname))) return false;
+
+    const root = area ?? document.querySelector(MAIN_AREA) ?? document.body;
+    if (!root) return false;
+
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        const parent = node.parentElement;
+        if (!parent || SKIP_TAGS.has(parent.tagName)) return NodeFilter.FILTER_REJECT;
+        if (parent.closest(OUR_HOSTS)) return NodeFilter.FILTER_REJECT;
+        return node.nodeValue.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+      },
+    });
+
+    /* One pass, grouping consecutive text nodes that render on the same line.
+     * That keeps "An email has been <b>sent</b>" whole — it is one sentence —
+     * without ever joining two sentences from different parts of the page. */
+    let block = null;
+    let text = '';
+
+    const hit = () =>
+      text.length <= MAX_BLOCK && VERIFY_TEXT.test(text) && isVisible(block);
+
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const owner = blockOf(node);
+      if (owner !== block) {
+        if (hit()) return true;
+        block = owner;
+        text = '';
+      }
+      text = `${text} ${node.nodeValue}`.replace(/\s+/g, ' ').trim();
+    }
+
+    return hit();
+  };
+
+  /* ---------------------------------------------------------------- */
+  /* the Gmail lookup, in the widget                                  */
+  /* ---------------------------------------------------------------- */
+
+  /**
+   * The same lookup the popup offers, on the page where you need it.
+   *
+   * The widget cannot reach Gmail: chrome.identity and the Gmail host
+   * permission belong to the extension, not to a page, and a mail body must
+   * never exist in a context that renders HTML. So everything here is a
+   * runtime message, and the worker hands back one URL and three strings.
+   *
+   * The link is SHOWN. Nothing below navigates — see widget.js, where Open is
+   * an anchor the user clicks and there is not a click() anywhere near it.
+   */
+
+  let verifyScreen = false;       // the detector said yes, and no page matched
+  let gmailConfigured = false;    // an OAuth client id is in the manifest
+  let gmailConnected = false;
+  let gmailFind = null;           // the find in progress, so a second click stops it
+  let gmailLink = null;           // what is on screen, or null
+  let gmailNote = '';             // the one line under the button
+
+  /* Fallback only. The real timings come from background/gmail.js via
+   * gmailStatus, so the 5s/90s policy lives in one place — the popup does the
+   * same, and neither of us owns a second copy of the numbers. */
+  let gmailPoll = { intervalMs: 5000, timeoutMs: 90000 };
+
+  async function loadGmailStatus() {
+    const res = await send({ type: 'gmailStatus' });
+    gmailPoll = res?.poll ?? gmailPoll;
+    gmailConfigured = !!res?.configured;
+    gmailConnected = !!res?.connected;
+  }
+
+  /** Leaving the screen: stop the poll and drop the link. A URL left on screen
+   *  after the user has moved on is a link with no context around it. */
+  function resetVerify() {
+    if (gmailFind) gmailFind.cancelled = true;
+    gmailFind = null;
+    gmailLink = null;
+    gmailNote = '';
+  }
+
+  function toggleFind() {
+    if (gmailFind) {
+      gmailFind.cancelled = true;
+      gmailFind = null;
+      gmailNote = 'Stopped.';
+      return paint();
+    }
+    return findVerificationLink();
+  }
+
+  /**
+   * Poll for the mail.
+   *
+   * The loop is here rather than in the worker for the reason the popup's copy
+   * gives: MV3 is free to shut the worker down, and one message left open for
+   * 90 seconds is the shape that gets killed mid-wait. Short round trips
+   * survive a restart, and Stop is felt at once instead of after the current
+   * request.
+   */
+  async function findVerificationLink() {
+    const me = { cancelled: false };
+    gmailFind = me;
+    gmailLink = null;
+    gmailNote = 'Looking for the activation email…';
+    paint();
+
+    const deadline = Date.now() + gmailPoll.timeoutMs;
+
+    while (!me.cancelled) {
+      const res = await send({ type: 'gmailFindLink', hostname: location.hostname });
+      if (me.cancelled) return;
+
+      if (res?.link) {
+        gmailFind = null;
+        return showActivationLink(res.link);
+      }
+
+      // NO_MATCH is "not yet". Nothing else gets better by waiting another 85s.
+      if (!res?.ok && res?.reason !== 'NO_MATCH') {
+        gmailFind = null;
+        if (res?.reason === 'NOT_CONNECTED') gmailConnected = false;
+        gmailNote =
+          res?.reason === 'NOT_CONNECTED'
+            ? 'Gmail access expired. Reconnect in the extension popup.'
+            : 'Could not search Gmail. Try again in a moment.';
+        return paint();
+      }
+
+      if (Date.now() + gmailPoll.intervalMs >= deadline) break;
+      gmailNote = `Looking for the activation email… ${Math.round((deadline - Date.now()) / 1000)}s`;
+      paint();
+      await new Promise((r) => setTimeout(r, gmailPoll.intervalMs));
+    }
+
+    gmailFind = null;
+    if (!me.cancelled) {
+      gmailNote =
+        'No activation email in the last hour. Check Spam, or resend it from ' +
+        'Workday and look again.';
+    }
+    paint();
+  }
+
+  function showActivationLink(link) {
+    const bits = [];
+    if (link.from) bits.push(link.from);
+    const age = describeAge(link.receivedAt);
+    if (age) bits.push(age);
+
+    gmailLink = {
+      url: link.url,
+      title: link.matchedTenant
+        ? 'Activation link for this site'
+        : 'Activation link — different site',
+      meta: bits.join(' · '),
+    };
+
+    gmailNote = link.matchedTenant
+      ? 'Check the address, then Open it yourself. It expires after 24 hours.'
+      : `This link is for ${link.tenant}, not the page you are on. Check it is the one you want.`;
+
+    paint();
+  }
+
+  /** "just now" / "4 min ago" / "2 h ago" — enough to spot a stale mail.
+   *  Deliberately a second copy of the popup's: a content script cannot import
+   *  from popup/, and the alternative is a shared file loaded into every page
+   *  for six lines. */
+  function describeAge(iso) {
+    const ms = Date.parse(iso ?? '');
+    if (!Number.isFinite(ms)) return '';
+
+    const mins = Math.round((Date.now() - ms) / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins} min ago`;
+    return `${Math.round(mins / 60)} h ago`;
+  }
+
+  /* ---------------------------------------------------------------- */
   /* rendering                                                        */
   /* ---------------------------------------------------------------- */
 
@@ -214,6 +470,40 @@
             `${visaPending} visa question(s) here. This page isn't one the extension ` +
             `knows, so it fills only — you review and click Continue.`,
         },
+      });
+    }
+
+    /* The "we emailed you a link" screen.
+     *
+     * Ahead of the placeholder and locked branches for the same reason the visa
+     * branch is: this path reads no selectors and needs no key, so neither an
+     * un-harvested adapter nor a locked vault has anything to say about it.
+     * Only ever reached when the registry recognised no page — a real form is
+     * always the more useful thing to offer. */
+    if (!ctx.page && verifyScreen) {
+      const canFind = gmailConfigured && gmailConnected;
+
+      const offline = gmailConfigured
+        ? 'Gmail is not connected — connect it in the extension popup to look up the link here.'
+        : 'Gmail is not set up — the extension popup has the steps.';
+
+      return AF.widget.render({
+        context,
+        tone: gmailLink ? 'ok' : null,
+        actionLabel: canFind
+          ? gmailFind
+            ? 'Stop looking'
+            : 'Find the verification link'
+          : null,
+        message: {
+          kind: canFind ? 'info' : 'warn',
+          text: canFind
+            ? gmailNote ||
+              'Workday says it emailed you a link. The extension can find it in ' +
+                'Gmail and show it — you click it.'
+            : offline,
+        },
+        link: gmailLink,
       });
     }
 
@@ -280,6 +570,13 @@
   /* ---------------------------------------------------------------- */
 
   async function onAction(passphrase) {
+    /* The mail lookup runs ahead of the busy gate, and does not set it. It
+     * polls for up to 90 seconds and the same button is Stop for the whole of
+     * that, so disabling it would leave no way to stop. It touches no field,
+     * no vault and no submit button, so there is nothing for `busy` to be
+     * protecting here. */
+    if (!ctx.page && verifyScreen) return toggleFind();
+
     if (busy) return;
     busy = true;
     paint();
@@ -553,6 +850,12 @@
     const visaChanged = nextVisa !== visaPending;
     visaPending = nextVisa;
 
+    /* Same blind spot, same fix: the verification screen is a page the registry
+     * returns null for, so pageKey never moves as it appears or goes away. */
+    const nextVerify = !next.page && AF.isVerificationScreen();
+    const verifyChanged = nextVerify !== verifyScreen;
+    verifyScreen = nextVerify;
+
     /* Workday mutates its DOM constantly. Without this early return we'd fire a
      * status message every 300ms forever, which is both wasteful and enough to
      * keep the service worker from ever idling. Nothing we render depends on
@@ -580,6 +883,15 @@
     widgetSuppressed = false;
 
     if (!AF.widget.isMounted()) AF.widget.mount({ onAction });
+    /* Asked only when the screen appears, never on an ordinary page: whether
+     * the user has connected Gmail is none of a job application's business
+     * until there is something to look up. Re-asked on every appearance
+     * because they may have connected it in the popup since the last one. */
+    if (verifyChanged) {
+      resetVerify();
+      if (verifyScreen) await loadGmailStatus();
+    }
+
     paint();
   }
 

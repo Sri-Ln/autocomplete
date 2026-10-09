@@ -19,14 +19,24 @@
  *   saveCredential    { host|null, email, password }→ { ok }
  *   deleteCredential  { host|null }                 → { ok }
  *   getSettings / saveSettings
- *   getFillData       { hostname }                  → { ok, profile, credential }
+ *   getFillData       { hostname }                  → { ok, profile, credential, picks }
+ *   savePick          { hostname, key, value }      → { ok }
+ *   listPicks         → { ok, picks }                     (every host)
+ *   forgetPick        { hostname, key }             → { ok }
  *   wipe              → { ok }
  *
+ *   gmailStatus       → { ok, configured, connected, email?, poll }
+ *   gmailConnect      → { ok, connected, email? } | { ok:false, reason }
+ *   gmailDisconnect   → { ok, cleared, revoked }
+ *   gmailFindLink     { hostname, poll? }          → { ok, link|null, reason }
+ *
  * Failure reasons returned to callers: NOT_CONFIGURED | LOCKED | NO_CREDENTIAL
+ * Gmail reasons: NO_CLIENT_ID | NOT_CONNECTED | CANCELLED | NO_MATCH | TIMED_OUT
  */
 
 import * as C from './crypto.js';
 import * as S from './storage.js';
+import * as G from './gmail.js';
 
 /* ------------------------------------------------------------------ */
 /* key handling                                                        */
@@ -193,6 +203,27 @@ const handlers = {
   },
 
   getFillData: (m) => getFillData(m.hostname),
+
+  /* ---- Gmail: find the account-activation link ----
+   *
+   * These need no passphrase and no key: nothing here touches the vault, and
+   * the OAuth token never reaches storage.js. They are here rather than in the
+   * popup only because chrome.identity and the Gmail host permission belong to
+   * the extension, not to a page — and because a mail body must never exist in
+   * a context that renders HTML.
+   *
+   * gmailFindLink is one lookup by default. The popup runs the 5s/90s poll
+   * itself, using the timings gmailStatus hands back, so a cancel is instant
+   * and no message port sits open for 90 seconds waiting on a worker MV3 is
+   * free to shut down. `poll: true` is here for callers that would rather
+   * block. */
+  gmailStatus: () => G.status(),
+  gmailConnect: () => G.connect(),
+  gmailDisconnect: () => G.disconnect(),
+  gmailFindLink: (m) =>
+    m.poll
+      ? G.pollForActivationLink({ hostname: m.hostname ?? '' })
+      : G.findActivationLink({ hostname: m.hostname ?? '' }),
 
   async wipe() {
     await S.wipeAll();
