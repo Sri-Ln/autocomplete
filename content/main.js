@@ -27,6 +27,14 @@
    *  on pages the registry does not recognise — which is where they live. */
   let visaPending = 0;
 
+  /* Section pages (My Experience): which section button is running, each
+   * section's last outcome for its mark, and which buttons are on screen —
+   * the last as a string, so refresh() can tell cheaply that a lazily rendered
+   * section has appeared. See the "section pages" block below. */
+  let sectionRunning = null;
+  let sectionState = {};
+  let sectionsShown = '';
+
   /**
    * How long to wait for the service worker before giving up on a message.
    *
@@ -201,6 +209,146 @@
         `this page has no safety checks configured, so nothing is submitted for you.` +
         (failed.length ? ` Skipped: ${failed.join(' · ')}` : '')
     );
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* section pages — My Experience                                    */
+  /* ---------------------------------------------------------------- */
+
+  /**
+   * A page that declares `sections` is filled one section at a time, from its
+   * own button per section. See sites/workday-experience.js.
+   *
+   * Why not one Fill like everywhere else: this page is the résumé parse's
+   * output for the user to check — entries already there, some right, some
+   * not — and each section is reviewed on its own. Filling Education should
+   * not also add five skills the user then has to find and remove. Submitting
+   * is its own button under the section ones, and the only path that reads the
+   * page's `manualSubmit`. Nothing requires every section to have been filled
+   * first: what Workday pre-filled may be exactly what the user wants.
+   *
+   * Like the visa path, this needs only the profile, which is plaintext — so
+   * it works while the vault is locked. No password goes anywhere near it.
+   */
+  function presentSections(page = ctx.page) {
+    const all = page?.sections ?? {};
+    return Object.entries(all)
+      .filter(([, s]) => {
+        try {
+          return s.present?.() ?? true;
+        } catch {
+          return false;
+        }
+      })
+      .map(([id]) => id);
+  }
+
+  function sectionButtons() {
+    const all = ctx.page?.sections ?? {};
+    const ids = presentSections();
+    const buttons = ids.map((id) => ({
+      id,
+      label: all[id].label,
+      state: sectionState[id] ?? null,
+      running: sectionRunning === id || (sectionRunning === 'all' && sectionCurrent === id),
+      disabled: !!sectionRunning || busy,
+    }));
+    /* "Fill all" first, full width: every section above, in order. */
+    if (ids.length > 1) {
+      buttons.unshift({
+        id: 'all', label: 'Fill all', wide: true,
+        running: sectionRunning === 'all', disabled: !!sectionRunning || busy,
+      });
+    }
+    return buttons;
+  }
+
+  /** Which section "Fill all" is on right now, for its button's spinner. */
+  let sectionCurrent = null;
+
+  /** Run one section and record its mark. Returns its report, or null if it threw. */
+  async function runSection(id, p) {
+    const section = ctx.page.sections[id];
+    try {
+      const report = await section.fill({ profile: p });
+      const msg = ctx.page.describe?.(report) ?? { kind: 'info', text: `${section.label}: done.` };
+      sectionState[id] = msg.kind === 'info' ? null : msg.kind;
+      return { report, msg };
+    } catch (err) {
+      AF.log(`section ${id} threw`, err);
+      sectionState[id] = 'err';
+      return { report: null, msg: { kind: 'err', text: `${section.label}: unexpected error — ${err?.message ?? err}` } };
+    }
+  }
+
+  async function onSection(id) {
+    const all = id === 'all';
+    if ((!all && !ctx.page?.sections?.[id]) || sectionRunning || busy) return;
+
+    sectionRunning = id;
+    paint();
+    try {
+      /* Fresh, not cached: the user may have just saved their experience in
+       * the popup, and filling from a stale copy is filling the wrong thing. */
+      profileCache = null;
+      const p = await profile();
+      if (!p) return say('err', 'Could not load your profile. Reload the page and try again.');
+
+      if (!all) {
+        const { msg } = await runSection(id, p);
+        return say(msg.kind, msg.text);
+      }
+
+      /* Every section in order, then ONE summary line for the lot — the same
+       * counts and "Needs you" a single section gives, merged. */
+      const merged = { section: 'All sections', filled: [], replaced: [], already: [], kept: [], left: [], failed: [], added: 0, note: '' };
+      for (const sid of presentSections()) {
+        sectionCurrent = sid;
+        paint();
+        const { report, msg } = await runSection(sid, p);
+        if (!report) {
+          merged.failed.push(msg.text);
+          continue;
+        }
+        for (const k of ['filled', 'replaced', 'already', 'kept', 'left', 'failed']) {
+          merged[k].push(...(report[k] ?? []));
+        }
+        merged.added += report.added ?? 0;
+        if (report.note && !report.filled.length && !report.already.length) {
+          merged.left.push(`${ctx.page.sections[sid].label}: ${report.note}`);
+        }
+      }
+      const msg = ctx.page.describe(merged);
+      say(msg.kind === 'info' ? 'ok' : msg.kind, msg.text);
+    } finally {
+      sectionRunning = null;
+      sectionCurrent = null;
+      paint();
+    }
+  }
+
+  /** The Submit under the section buttons: settle the page, then click Next once. */
+  async function onSectionSubmit() {
+    const sel = ctx.page?.manualSubmit;
+    if (!sel || sectionRunning || busy) return;
+    busy = true;
+    paint();
+    try {
+      await AF.sites.workday.closePopup();
+      document.activeElement?.blur?.();
+      await new Promise((r) => setTimeout(r, 250));
+
+      const btn = document.querySelector(sel);
+      if (!btn || !btn.getClientRects().length) return say('err', "Could not find the page's Next button.");
+      if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') {
+        return say('warn', 'Next is disabled — Workday wants something fixed on the page first.');
+      }
+      btn.click();
+      say('ok', 'Submitted. If Workday flags anything, fix it and press Submit again.');
+    } finally {
+      busy = false;
+      paint();
+    }
   }
 
   /* ---------------------------------------------------------------- */
@@ -553,6 +701,25 @@
       });
     }
 
+    /* A section page: one button per section, and no main action at all —
+     * nothing on this page is ever submitted. Ahead of the locked branch
+     * because it reads only the plaintext profile; see onSection(). */
+    if (ctx.page?.sections) {
+      return AF.widget.render({
+        context,
+        tone: lastMessage?.kind === 'err' ? 'err' : lastMessage?.kind === 'ok' ? 'ok' : null,
+        actionLabel: null,
+        sections: sectionButtons(),
+        sectionSubmit: ctx.page.manualSubmit
+          ? { label: busy ? 'Submitting…' : 'Submit', disabled: busy || !!sectionRunning }
+          : null,
+        message: lastMessage ?? {
+          kind: 'info',
+          text: 'Fill the sections you want, then Submit.',
+        },
+      });
+    }
+
     /* Locked — one passphrase entry per Chrome session. */
     if (!status.unlocked) {
       return AF.widget.render({
@@ -615,6 +782,13 @@
      * no vault and no submit button, so there is nothing for `busy` to be
      * protecting here. */
     if (!ctx.page && verifyScreen) return toggleFind();
+
+    /* The popup's "Fill this page" lands here too. A section page has no
+     * whole-page fill and nothing to submit, so it is pointed at the buttons
+     * rather than run through doFill — which would find no values() to call. */
+    if (ctx.page?.sections) {
+      return say('info', 'On this page, use the section buttons in the widget — one section at a time.');
+    }
 
     if (busy) return;
     busy = true;
@@ -953,13 +1127,20 @@
      * keep the service worker from ever idling. Nothing we render depends on
      * anything but the page key and that count, so if neither has moved, there
      * is nothing to do. */
-    if (!pageChanged && !firstRun && !busy && !visaChanged) return;
+    /* And once more for section pages: Websites is shown only when the page
+     * has that section, and Workday can render it after the page itself. */
+    const nextSections = presentSections(next.page).join(',');
+    const sectionsChanged = nextSections !== sectionsShown;
+    sectionsShown = nextSections;
+
+    if (!pageChanged && !firstRun && !busy && !visaChanged && !verifyChanged && !sectionsChanged) return;
 
     if (pageChanged) {
       // A different form appeared → the previous fill's confirm no longer applies.
       awaitingSubmitConfirm = false;
       lastRun = null;
       lastMessage = null;
+      sectionState = {};
     }
 
     ctx = next;
@@ -974,7 +1155,6 @@
     }
     widgetSuppressed = false;
 
-    if (!AF.widget.isMounted()) AF.widget.mount({ onAction });
     /* Asked only when the screen appears, never on an ordinary page: whether
      * the user has connected Gmail is none of a job application's business
      * until there is something to look up. Re-asked on every appearance
@@ -984,6 +1164,7 @@
       if (verifyScreen) await loadGmailStatus();
     }
 
+    if (!AF.widget.isMounted()) AF.widget.mount({ onAction, onSection, onSectionSubmit });
     paint();
   }
 

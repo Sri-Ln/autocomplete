@@ -20,7 +20,7 @@ AF.widget = (() => {
   let host = null;
   let root = null;
   let els = {};
-  let handlers = {}; // { onFill, onUnlock, onOpenOptions }
+  let handlers = {}; // { onAction, onSection, onSectionSubmit }
   let collapsed = false;
 
   /** {left, top} once the user has moved the widget; null while it still sits
@@ -181,6 +181,21 @@ AF.widget = (() => {
        Copy so the pair reads as one row, but it is a real link the user clicks. */
     a.ghost { text-decoration: none; color: #e8e8ee; }
 
+    /* Section buttons — My Experience gets one per section instead of a single
+       Fill. A 2x2 grid of the same ghost buttons the link row uses, so they read
+       as a set of equal choices rather than one primary action. The mark after
+       a label is the last run's outcome for that section. */
+    .sections { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+    .sections .ghost.wide { grid-column: 1 / -1; }
+    .sections .ghost { gap: 6px; padding: 8px 10px; }
+    .sections .ghost:disabled { opacity: .45; cursor: default; }
+    .sections .ghost.running { border-color: #7c5cff; color: #c9bcff; }
+    #secSubmit { margin-top: 8px; width: 100%; }
+    .sec-mark { font-size: 11px; line-height: 1; }
+    .sec-mark.ok   { color: #46c17f; }
+    .sec-mark.warn { color: #f0a83c; }
+    .sec-mark.err  { color: #ef5f5f; }
+
     .hidden { display: none !important; }
 
     .bubble {
@@ -229,6 +244,11 @@ AF.widget = (() => {
                autocomplete="off" />
 
         <button class="primary" id="action">Fill &amp; Submit</button>
+
+        <!-- One button per section, on pages that work section by section. -->
+        <div class="sections hidden" id="sections"></div>
+        <!-- Below the section buttons: clicks the page's own Next, on request only. -->
+        <button class="primary hidden" id="secSubmit" type="button">Submit</button>
 
         <div class="msg hidden" id="msg"></div>
 
@@ -296,8 +316,17 @@ AF.widget = (() => {
       pass: root.getElementById('pass'),
       action: root.getElementById('action'),
       msg: root.getElementById('msg'),
+      link: root.getElementById('link'),
+      linkTitle: root.getElementById('linkTitle'),
+      linkUrl: root.getElementById('linkUrl'),
+      linkMeta: root.getElementById('linkMeta'),
+      linkCopy: root.getElementById('linkCopy'),
+      linkOpen: root.getElementById('linkOpen'),
+      linkNote: root.getElementById('linkNote'),
       collapse: root.getElementById('collapse'),
       bubble: root.getElementById('bubble'),
+      sections: root.getElementById('sections'),
+      secSubmit: root.getElementById('secSubmit'),
     };
 
     els.action.addEventListener('click', () => handlers.onAction?.(els.pass.value));
@@ -305,6 +334,15 @@ AF.widget = (() => {
       if (e.key === 'Enter') handlers.onAction?.(els.pass.value);
     });
     els.linkCopy.addEventListener('click', copyLink);
+    els.secSubmit.addEventListener('click', () => {
+      if (!els.secSubmit.disabled) handlers.onSectionSubmit?.();
+    });
+    /* One delegated listener for every section button, so re-rendering the
+     * buttons never stacks handlers. The id travels on the element. */
+    els.sections.addEventListener('click', (e) => {
+      const btn = e.target.closest?.('button[data-section]');
+      if (btn && !btn.disabled) handlers.onSection?.(btn.dataset.section);
+    });
     /* Nothing is wired to the Open anchor on purpose. It has an href and the
      * browser does the rest; adding a click handler here would put the
      * extension back in the business of navigating. */
@@ -685,6 +723,11 @@ AF.widget = (() => {
    *   s.needsPass   show the passphrase input
    *   s.message     { kind: 'info'|'ok'|'warn'|'err', text }
    *   s.tone        'ok' | 'warn' | 'err' | null   → the status dot
+   *   s.link        { url, title, meta } or null   → the activation link block
+   *   s.sections    [{ id, label, state?, running?, disabled? }] or null
+   *                 → one button per section (My Experience). state is
+   *                   'ok' | 'warn' | 'err' | null — the last run's outcome
+   *   s.sectionSubmit { label, disabled? } or null → the Submit under them
    */
   function render(s) {
     if (!host) return;
@@ -704,6 +747,13 @@ AF.widget = (() => {
       els.action.classList.remove('hidden');
       els.action.textContent = s.actionLabel ?? 'Fill & Submit';
       els.action.disabled = !!s.disabled;
+    }
+
+    renderSections(s.sections);
+    els.secSubmit.classList.toggle('hidden', !s.sectionSubmit);
+    if (s.sectionSubmit) {
+      els.secSubmit.textContent = s.sectionSubmit.label ?? 'Submit';
+      els.secSubmit.disabled = !!s.sectionSubmit.disabled;
     }
 
     if (s.message) {
@@ -741,6 +791,33 @@ AF.widget = (() => {
      * hangs off the bottom-right that just pushes the top edge up, but once it
      * is top-anchored the growth goes downward and can run off screen. */
     keepInView();
+  }
+
+  const SECTION_MARK = { ok: '✓', warn: '!', err: '✕' };
+
+  /**
+   * The section buttons. Rebuilt from scratch on each render — four nodes —
+   * and with textContent only, so a label can never put markup into the
+   * shadow root.
+   */
+  function renderSections(list) {
+    els.sections.replaceChildren();
+    els.sections.classList.toggle('hidden', !list?.length);
+    for (const sec of list ?? []) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'ghost' + (sec.running ? ' running' : '') + (sec.wide ? ' wide' : '');
+      btn.dataset.section = sec.id;
+      btn.disabled = !!sec.disabled;
+      btn.append(sec.running ? 'Working…' : sec.label);
+      if (!sec.running && SECTION_MARK[sec.state]) {
+        const mark = document.createElement('span');
+        mark.className = `sec-mark ${sec.state}`;
+        mark.textContent = SECTION_MARK[sec.state];
+        btn.append(mark);
+      }
+      els.sections.append(btn);
+    }
   }
 
   function destroy() {
