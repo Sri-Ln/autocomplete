@@ -130,6 +130,7 @@ async function getFillData(hostname) {
     source: match.source, // 'default' | 'override' — the widget reports which
     settings: await S.getSettings(),
     answers: await S.getAnswers(),
+    picks: await S.getPicks(hostname), // this company's remembered dropdown answers
   };
 }
 
@@ -191,6 +192,18 @@ const handlers = {
   },
   async forgetAnswer(m) {
     await S.forgetAnswer(m.signature);
+    return { ok: true };
+  },
+
+  async savePick(m) {
+    await S.savePick(m.hostname, m.key, m.value);
+    return { ok: true };
+  },
+  async listPicks() {
+    return { ok: true, picks: await S.listPicks() };
+  },
+  async forgetPick(m) {
+    await S.forgetPick(m.hostname, m.key);
     return { ok: true };
   },
 
