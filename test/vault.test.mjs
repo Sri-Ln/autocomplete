@@ -155,5 +155,63 @@ check('forgetPick removes it', await S.getPicks('initrode.wd3.myworkdayjobs.com'
 check('forgetPick drops the empty tenant', 'initrode.wd3.myworkdayjobs.com' in (await S.listPicks()), false);
 check('forgetPick leaves other tenants', (await S.getPicks('nvidia.wd5.myworkdayjobs.com')).source, 'Indeed');
 
+/* My Experience fields — nested, so sanitised one level down. All synthetic. */
+
+check('a fresh profile has two empty education slots', (await S.getProfile()).education.length, 2);
+check('and no languages, skills or links', [
+  (await S.getProfile()).languages, (await S.getProfile()).skills, (await S.getProfile()).websites,
+], [[], [], { linkedin: '', github: '', portfolio: '', other: '' }]);
+
+await S.setProfile({
+  education: [
+    {
+      school: '  Example State University ', degree: "Bachelor's Degree\nBachelor of Science\n\nbachelor's degree",
+      fieldOfStudy: ['Widgetry', ' Applied Widgetry '], gpa: ' 3.5 ', from: '2015', to: '2019',
+      evil: 'x',
+    },
+    { school: 'Sample Tech Institute', degree: ["Master's Degree"], fieldOfStudy: 'Astro Gardening' },
+    { school: 'A third one is dropped' },
+  ],
+  languages: [
+    { language: ' Esperanto ', overall: 'Fluent', reading: 'native', writing: 'excellent', bogus: 1 },
+    { language: 'esperanto', overall: 'beginner' },
+    { language: '', overall: 'fluent' },
+    { language: 'Volapük', overall: 'intermediate' },
+  ],
+  skills: 'Widget Design\n Gadgetry , Doohickeys',
+  websites: { github: ' example.org/someone ', linkedin: 'https://example.org/in/someone', evil: 'x' },
+});
+const exp = await S.getProfile();
+check('education is always exactly two slots', exp.education.length, 2);
+check('school trimmed', exp.education[0].school, 'Example State University');
+check('a ladder from one-per-line text, blanks and repeats dropped', exp.education[0].degree,
+  ["Bachelor's Degree", 'Bachelor of Science']);
+check('a ladder from an array, trimmed', exp.education[0].fieldOfStudy, ['Widgetry', 'Applied Widgetry']);
+check('a legacy single-string field of study becomes a one-rung ladder',
+  exp.education[1].fieldOfStudy, ['Astro Gardening']);
+check('unknown keys dropped inside an entry', 'evil' in exp.education[0], false);
+check('missing entry keys filled', exp.education[1].gpa, '');
+check('languages: blank names dropped, duplicates (any case) dropped',
+  exp.languages.map((l) => l.language), ['Esperanto', 'Volapük']);
+check('levels lowercased onto the semantic set', [exp.languages[0].overall, exp.languages[0].reading],
+  ['fluent', 'native']);
+check('a level that is not on the set is dropped, not stored', exp.languages[0].writing, '');
+check('unset skill levels are blank (meaning "use overall")', exp.languages[1].speaking, '');
+check('no stray keys on a language', Object.keys(exp.languages[0]).sort(),
+  ['comprehension', 'language', 'overall', 'reading', 'speaking', 'writing']);
+check('skills split like the other lists', exp.skills, ['Widget Design', 'Gadgetry', 'Doohickeys']);
+check('websites whitelisted and trimmed', exp.websites,
+  { linkedin: 'https://example.org/in/someone', github: 'example.org/someone', portfolio: '', other: '' });
+
+// A profile from before these fields existed reads back in the right shape.
+disk.af_profile = { firstName: 'Old' };
+const legacy = await S.getProfile();
+check('legacy profile: education shape', legacy.education[0], {
+  school: '', degree: [], fieldOfStudy: [], gpa: '', from: '', to: '',
+});
+legacy.education[0].school = 'mutated';
+check('and reading it hands out a fresh copy each time',
+  (await S.getProfile()).education[0].school, '');
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

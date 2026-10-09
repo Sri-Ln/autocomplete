@@ -166,6 +166,7 @@ async function loadProfile() {
   }
   for (const key of PROFILE_SEG_FIELDS) setSeg(key, profile[key]);
   paintVisaCount();
+  paintExperience(profile);
 }
 
 /* ------------------------------------------------------------------ */
@@ -299,6 +300,187 @@ $('saveProfileBtn').addEventListener('click', async () => {
     // Open tabs cache the profile for the pill; tell them it moved.
     await broadcast({ type: 'profileChanged' });
   }
+});
+
+/* ------------------------------------------------------------------ */
+/* experience — the My Experience page                                 */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Education, languages, skills and links, on their own tab with their own Save.
+ *
+ * Saved separately for the reason the visa box is: a half-typed name on the
+ * Profile tab is not an instruction to save that name. "Save experience"
+ * patches these keys onto `storedProfile` and leaves the rest as stored.
+ *
+ * Ladders (degree, field of study) are one rung per line; language levels are
+ * semantic values from a segmented control, never free text — the page maps
+ * them onto each company's own scale (content/experience.js).
+ */
+
+const LANG_LEVELS = [
+  ['', '–', 'Not set'],
+  ['beginner', 'Beg', 'Beginner'],
+  ['intermediate', 'Int', 'Intermediate'],
+  ['advanced', 'Adv', 'Advanced'],
+  ['fluent', 'Flu', 'Fluent'],
+  ['native', 'Nat', 'Native'],
+];
+const LANG_SKILLS = [
+  ['reading', 'Reading'],
+  ['writing', 'Writing'],
+  ['speaking', 'Speaking'],
+  ['comprehension', 'Comprehension'],
+];
+const WEB_KINDS = ['linkedin', 'github', 'portfolio', 'other'];
+
+const ladderText = (v) => (Array.isArray(v) ? v : String(v ?? '').split('\n')).join('\n');
+const ladderOf = (text) => String(text ?? '').split('\n').map((s) => s.trim()).filter(Boolean);
+
+/** A segmented level control. `blankLabel` titles the "–" segment. */
+function levelSeg(key, value, blankTitle) {
+  const seg = document.createElement('div');
+  seg.className = 'seg lvl';
+  seg.setAttribute('role', 'radiogroup');
+  seg.dataset.k = key;
+  for (const [v, short, title] of LANG_LEVELS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.dataset.value = v;
+    b.textContent = short;
+    b.title = v ? title : blankTitle;
+    const on = (value ?? '') === v;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-checked', String(on));
+    seg.append(b);
+  }
+  seg.addEventListener('click', (e) => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    for (const b of seg.querySelectorAll('button')) {
+      const on = b === btn;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-checked', String(on));
+    }
+  });
+  return seg;
+}
+
+function levelRow(label, seg) {
+  const row = document.createElement('div');
+  row.className = 'qrow lvl';
+  const span = document.createElement('span');
+  span.className = 'qlabel';
+  span.textContent = label;
+  seg.setAttribute('aria-label', label);
+  row.append(span, seg);
+  return row;
+}
+
+/** One language card. Built with textContent only — a name is never markup. */
+function languageCard(lang = {}) {
+  const card = document.createElement('div');
+  card.className = 'card lang';
+
+  const head = document.createElement('div');
+  head.className = 'lang-head';
+  const name = document.createElement('input');
+  name.type = 'text';
+  name.dataset.k = 'language';
+  name.placeholder = 'Language';
+  name.value = lang.language ?? '';
+  name.setAttribute('aria-label', 'Language');
+  const del = document.createElement('button');
+  del.type = 'button';
+  del.textContent = '×';
+  del.title = 'Remove this language';
+  del.addEventListener('click', () => card.remove());
+  head.append(name, del);
+
+  const stack = document.createElement('div');
+  stack.className = 'stack tight';
+  stack.append(head, levelRow('Overall', levelSeg('overall', lang.overall, 'Leave it for me')));
+
+  const details = document.createElement('details');
+  details.className = 'per-skill';
+  const summary = document.createElement('summary');
+  summary.textContent = 'Per skill — blank means same as overall';
+  details.append(summary);
+  for (const [k, label] of LANG_SKILLS) {
+    details.append(levelRow(label, levelSeg(k, lang[k], 'Same as overall')));
+  }
+  // Open it when a per-skill level is set, so it is not hidden from the user.
+  details.open = LANG_SKILLS.some(([k]) => lang[k]);
+  stack.append(details);
+
+  card.append(stack);
+  return card;
+}
+
+function paintExperience(profile) {
+  const edu = profile.education ?? [];
+  for (const card of document.querySelectorAll('.card.edu')) {
+    const e = edu[Number(card.dataset.edu)] ?? {};
+    for (const el of card.querySelectorAll('[data-k]')) {
+      const k = el.dataset.k;
+      el.value = k === 'degree' || k === 'fieldOfStudy' ? ladderText(e[k] ?? []) : (e[k] ?? '');
+    }
+  }
+
+  const list = $('langList');
+  list.replaceChildren(...(profile.languages ?? []).map(languageCard));
+
+  $('skills').value = (profile.skills ?? []).join('\n');
+  for (const k of WEB_KINDS) $(`web_${k}`).value = profile.websites?.[k] ?? '';
+}
+
+function readExperience() {
+  const education = [...document.querySelectorAll('.card.edu')].map((card) => {
+    const get = (k) => card.querySelector(`[data-k="${k}"]`).value;
+    return {
+      school: get('school').trim(),
+      degree: ladderOf(get('degree')),
+      fieldOfStudy: ladderOf(get('fieldOfStudy')),
+      gpa: get('gpa').trim(),
+      from: get('from').trim(),
+      to: get('to').trim(),
+    };
+  });
+
+  const languages = [...$('langList').querySelectorAll('.card.lang')].map((card) => {
+    const lang = { language: card.querySelector('[data-k="language"]').value.trim() };
+    for (const seg of card.querySelectorAll('.seg[data-k]')) {
+      lang[seg.dataset.k] = seg.querySelector('button.active')?.dataset.value ?? '';
+    }
+    return lang;
+  }).filter((l) => l.language);
+
+  const websites = {};
+  for (const k of WEB_KINDS) websites[k] = $(`web_${k}`).value.trim();
+
+  return { education, languages, skills: ladderOf($('skills').value), websites };
+}
+
+$('addLangBtn').addEventListener('click', () => {
+  const card = languageCard();
+  $('langList').append(card);
+  card.querySelector('input').focus();
+});
+
+$('saveExperienceBtn').addEventListener('click', async () => {
+  const profile = { ...storedProfile, ...readExperience() };
+  const res = await send({ type: 'saveProfile', profile });
+  toast(res?.ok ? 'Experience saved.' : (res?.error ?? 'Save failed.'), res?.ok ? 'ok' : 'err');
+  if (!res?.ok) return;
+
+  storedProfile = profile;
+  // Repaint from storage: drops empty language cards and shows the cleaned ladders.
+  const fresh = await send({ type: 'getProfile' });
+  if (fresh?.profile) {
+    storedProfile = fresh.profile;
+    paintExperience(fresh.profile);
+  }
+  await broadcast({ type: 'profileChanged' });
 });
 
 /* ------------------------------------------------------------------ */

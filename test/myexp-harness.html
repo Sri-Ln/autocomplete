@@ -1,0 +1,682 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>My Experience harness</title>
+    <style>
+      body { margin:0; padding:24px; background:#0b0b10; color:#e8e8ee;
+             font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+      h1 { font-size:15px; margin:0 0 4px; }
+      p.lede { color:#8a8a9c; font-size:12.5px; margin:0 0 18px; max-width:76ch; }
+      .page { max-width:620px; }
+      [role=group] > h4 { color:#9fc2e8; margin:18px 0 6px; font-size:13px; }
+      [role=group] h5 { margin:8px 0 4px; font-size:12px; color:#b9b9c9; display:inline-block; }
+      .entry { border:1px solid #2c2c38; border-radius:10px; padding:10px 12px; margin-bottom:8px; position:relative; }
+      label, legend { display:block; font-size:11px; color:#8a8a9c; }
+      fieldset { border:0; padding:0; margin:0 0 8px; }
+      input[type=text] { display:block; width:100%; box-sizing:border-box; margin:3px 0 8px; padding:6px 8px;
+             border-radius:7px; background:#0f0f15; border:1px solid #2c2c38; color:#e8e8ee; font-size:13px; }
+      button { font-family:inherit; }
+      button.trigger { display:block; width:100%; text-align:left; margin:3px 0 8px; padding:6px 8px; border-radius:7px;
+             background:#0f0f15; border:1px solid #2c2c38; color:#e8e8ee; font-size:13px; cursor:pointer; }
+      .popup { position:absolute; z-index:50; width:300px; max-height:220px; overflow:auto; background:#1d1d26;
+             border:1px solid #44445a; border-radius:8px; padding:4px; margin:0; list-style:none; }
+      .popup [role=option] { padding:5px 8px; border-radius:5px; font-size:12.5px; cursor:pointer; }
+      .popup [role=option]:hover { background:#2c2c38; }
+      .popup p, ul.pills p { margin:0; display:inline; }
+      ul.pills { list-style:none; padding:0; margin:3px 0; display:flex; flex-wrap:wrap; gap:4px; }
+      ul.pills [data-automation-id=selectedItem] { background:#2c2c38; border-radius:12px; padding:2px 8px; font-size:12px; }
+      [data-automation-id=DELETE_charm] { cursor:pointer; margin-right:4px; color:#ef7d7d; }
+      .spin { position:relative; display:inline-block; width:64px; height:28px; border:1px solid #2c2c38;
+              border-radius:7px; margin:3px 8px 8px 0; cursor:text; }
+      .spin [data-automation-id$=-display] { position:absolute; inset:0; display:flex; align-items:center;
+              justify-content:center; z-index:1; font-size:13px; }
+      .del { position:absolute; right:10px; top:8px; font-size:11px; background:none; border:1px solid #44445a;
+             color:#c9c9d8; border-radius:6px; padding:2px 8px; cursor:pointer; }
+      .add { margin:4px 0 6px; padding:5px 12px; border-radius:7px; background:#22222c; color:#e8e8ee;
+             border:1px solid #34343f; cursor:pointer; }
+      .run { margin:16px 0 10px; display:flex; gap:8px; }
+      .run button { padding:8px 14px; border-radius:8px; border:none; background:#7c5cff; color:#fff;
+             font-weight:600; font-size:13px; cursor:pointer; }
+      #verdict { margin:10px 0; padding:11px 13px; border-radius:8px; font-size:13px; max-width:900px; white-space:pre-wrap; }
+      .pass { background:#16281f; color:#7fd6a6; } .fail { background:#2b1717; color:#f09a9a; }
+      pre { background:#0f0f15; border:1px solid #2c2c38; border-radius:8px; padding:11px; font-size:11px;
+            color:#9fc2e8; max-width:900px; overflow:auto; white-space:pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <h1>My Experience harness</h1>
+    <p class="lede">
+      A synthetic recreation of Workday's My Experience page, built from the DOM
+      of a saved live page: the same section and entry wiring
+      (<code>[role=group][aria-labelledby="Education-1-panel"]</code>, one
+      <code>add-button</code> per section), the degree select with its
+      <code>display:none</code> value input, typeahead prompts that search on type
+      (Field of Study) or only on Enter (Skills), Workday's year spinbutton, and
+      two language layouts — a single numbered dropdown, and per-skill LinkedIn-style
+      dropdowns with the fluent checkbox. The real content scripts and
+      <code>main.js</code> are loaded with <code>chrome</code> stubbed, and every
+      section is filled through its real widget button. Every value is invented.
+    </p>
+
+    <div class="run"><button id="runBtn">Run checks</button></div>
+    <div id="verdict">running…</div>
+    <pre id="out"></pre>
+    <div id="root" class="page"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+
+    <script>
+      /* ================================================================
+       * 1. chrome stub — before any content script, as in flow-harness.
+       *
+       * Entirely synthetic. A fixture lands in git history, screenshots and
+       * every clone, so it never carries a real name, school or link.
+       * ============================================================== */
+      window.PROFILE = {
+        firstName: 'Testy', lastName: 'McTestface',
+        education: [
+          {
+            school: 'Sample Tech Institute',
+            // Rung 1 is on no list; rung 2 is, word for word (after the suffix).
+            degree: ['Master of Widgetry', "Master's Degree"],
+            /* Rung 2 "Astro" is only a PREFIX of two options; rung 3 is exact.
+               An exact rung must beat a loose reading of an earlier one. */
+            fieldOfStudy: ['Quantum Origami', 'Astro', 'Astro Gardening Technology'],
+            gpa: '3.9', from: '2020', to: '05/2022',
+          },
+          {
+            // Already on the page from the "résumé parse" — must not be duplicated.
+            school: 'Example State University',
+            degree: ["Bachelor's Degree"], fieldOfStudy: ['Widgetry'],
+            gpa: '3.5', from: '2015', to: '2019',
+          },
+        ],
+        languages: [
+          { language: 'Esperanto', overall: 'fluent', reading: '', writing: '', speaking: '', comprehension: '' },
+          { language: 'Volapük', overall: 'intermediate', reading: 'advanced', writing: '', speaking: '', comprehension: '' },
+          { language: 'Interlingua', overall: 'beginner', reading: '', writing: '', speaking: '', comprehension: '' },
+          // Not on the tenant's list: the entry added for it must be taken back.
+          { language: 'Toki Pona', overall: 'fluent', reading: '', writing: '', speaking: '', comprehension: '' },
+        ],
+        skills: ['Java', 'Python', 'Teamwork', 'Widget Design', 'Kubernetes'],
+        websites: {
+          linkedin: 'linkedin.example/in/testy-mctestface',
+          github: 'github.example/testy-mctestface/',   // already there, differently written
+          portfolio: 'testy.example',
+          other: '',
+        },
+      };
+
+      window.__sent = [];
+      window.chrome = {
+        runtime: {
+          async sendMessage(msg) {
+            window.__sent.push(msg);
+            switch (msg?.type) {
+              case 'status': return { configured: true, unlocked: false, settings: { autoSubmit: true, showWidget: true } };
+              case 'getProfile': return { ok: true, profile: window.PROFILE };
+              default: return { ok: true };
+            }
+          },
+          // Kept, so a check can deliver the popup's "Fill this page".
+          onMessage: { addListener(fn) { window.__onMessage = fn; } },
+        },
+        storage: {
+          local: { async get() { return {}; }, async set() {} },
+          session: { async get() { return {}; }, async set() {}, async remove() {} },
+        },
+      };
+
+      /* Every write into a select's display:none value input. Must stay empty:
+         typing into one took a live application page down. */
+      window.__hiddenWrites = [];
+      window.__nextClicks = 0;
+      window.__fosQueries = [];
+    </script>
+
+    <script>
+      /* ================================================================
+       * 2. fixtures — Workday's widgets, React-controlled
+       * ============================================================== */
+      const { useState, useRef, useEffect, createElement: h } = React;
+
+      const DEGREES = ['Select One', "Associate's Degree (±14 years)", "Bachelor's Degree (±16 years)",
+        "Master's Degree (±18 years)", 'Doctorate (±21 years)'];
+      const FIELDS = ['Applied Widgetry', 'Widgetry', 'Widgetry Education', 'Astro Gardening',
+        'Astro Gardening Technology', 'General Studies', 'Underwater Basketry'];
+      const SKILLS = ['JavaScript', 'Java (Programming Language)', 'Java Spring',
+        'Python (Programming Language)', 'Teamwork', 'Widget Design', 'Gadgetry'];
+      const LANGS = ['Select One', 'Esperanto', 'Interlingua', 'Klingon', 'Volapük'];
+      const NUMBERED = ['Select One', '1 - Beginner', '2 - Classroom Study', '3 - Intermediate',
+        '4 - Advanced', '5 - Fluent'];
+      const LINKEDIN = ['Select One', 'Elementary proficiency', 'Limited working proficiency',
+        'Professional working proficiency', 'Full professional proficiency',
+        'Native or bilingual proficiency'];
+      /* Ability fields are keyed by an opaque per-tenant id, as on Workday —
+         only the label says which is which. */
+      const ABILITY_SINGLE = [{ id: '7c1e0f2ab9d34c55', label: 'Proficiency' }];
+      const ABILITY_SPLIT = [
+        { id: '3f2a9c1e0b7d4e21', label: 'Reading' },
+        { id: 'a91d77c3e5f04b10', label: 'Writing' },
+        { id: '5e0b2d8f6a1c4f93', label: 'Speaking' },
+      ];
+
+      function useDismiss(open, setOpen) {
+        useEffect(() => {
+          if (!open) return;
+          const onKey = (e) => e.key === 'Escape' && setOpen(false);
+          const onClick = (e) => { if (!e.target?.closest?.('.popup')) setOpen(false); };
+          document.addEventListener('keydown', onKey);
+          document.body.addEventListener('click', onClick);
+          return () => {
+            document.removeEventListener('keydown', onKey);
+            document.body.removeEventListener('click', onClick);
+          };
+        }, [open]);
+      }
+
+      function Text({ auto, fkit, label, value, onChange, required }) {
+        return h('div', { 'data-automation-id': `formField-${auto}`, 'data-fkit-id': fkit },
+          h('label', { htmlFor: fkit }, label, required && h('abbr', null, '*')),
+          h('input', { type: 'text', id: fkit, 'aria-required': !!required, value: value ?? '',
+                       onChange: (e) => onChange(e.target.value) }));
+      }
+
+      /* Workday's single select, as on the saved page: a listbox button plus a
+         display:none <input> holding the value, wired to the form. */
+      function Select({ auto, fkit, label, value, options, onChange }) {
+        const [open, setOpen] = useState(false);
+        useDismiss(open, setOpen);
+        return h('div', { 'data-automation-id': `formField-${auto}`, 'data-fkit-id': fkit },
+          h('label', { htmlFor: fkit }, label),
+          h('button', { type: 'button', className: 'trigger', id: fkit, 'aria-haspopup': 'listbox',
+                        onClick: () => setOpen((o) => !o) }, value || 'Select One'),
+          h('input', { type: 'text', style: { display: 'none' }, value: value ?? '',
+                       onChange: (e) => { window.__hiddenWrites.push(e.target.value); onChange(e.target.value); } }),
+          open && h('ul', { className: 'popup', role: 'listbox' },
+            options.map((o) => h('li', { key: o, role: 'option',
+              onClick: () => { onChange(o === 'Select One' ? '' : o); setOpen(false); } }, o))));
+      }
+
+      /* Workday's prompt: a visible search box, pills in a selectedItemList
+         (itself role="listbox", right beside the input), and a results list.
+         searchOn 'type' filters as you type; 'enter' searches only on Enter,
+         like the catalogue prompts. __enterCommits makes Enter select the first
+         result outright — the trap promptPick has to notice and undo. */
+      /* `browse` + `delay`: as Workday's Field of Study does, clicking in opens
+         a default browse list straight away, and the results for what was
+         typed replace it only `delay` ms later. */
+      function Prompt({ auto, fkit, label, values, onChange, catalogue, searchOn, multi, browse, delay = 0, onQuery }) {
+        const [query, setQuery] = useState('');
+        const [searched, setSearched] = useState(null);
+        const [open, setOpen] = useState(false);
+        const [applied, setApplied] = useState('');
+        useDismiss(open, setOpen);
+
+        const term = searchOn === 'type' ? query : searched;
+        useEffect(() => {
+          if (!delay) return setApplied(term ?? '');
+          const t = setTimeout(() => setApplied(term ?? ''), delay);
+          return () => clearTimeout(t);
+        }, [term]);
+        const shownTerm = delay ? applied : term;
+        const results = !open ? []
+          : shownTerm ? catalogue.filter((o) => o.toLowerCase().includes(shownTerm.toLowerCase()))
+          : browse ?? [];
+        const add = (o) => {
+          onChange(multi ? (values.includes(o) ? values : [...values, o]) : [o]);
+          setQuery(''); setSearched(null);
+          if (!multi) setOpen(false);
+        };
+
+        return h('div', { 'data-automation-id': `formField-${auto}`, 'data-fkit-id': fkit },
+          h('label', { htmlFor: fkit }, label),
+          h('div', { 'data-automation-id': 'multiSelectContainer' },
+            h('div', { 'data-automation-id': 'multiselectInputContainer' },
+              h('input', { type: 'text', id: fkit, placeholder: 'Search', value: query,
+                onFocus: () => setOpen(true), onClick: () => setOpen(true),
+                onChange: (e) => { setQuery(e.target.value); setOpen(true); if (searchOn === 'enter') setSearched(null);
+                                   if (e.target.value) onQuery?.(e.target.value); },
+                onKeyDown: (e) => {
+                  if (e.key !== 'Enter') return;
+                  e.preventDefault();
+                  setSearched(query); setOpen(true);
+                  if (window.__enterCommits) {
+                    const first = catalogue.find((o) => o.toLowerCase().includes(query.toLowerCase()));
+                    if (first) add(first);
+                  }
+                } })),
+            h('ul', { className: 'pills', 'data-automation-id': 'selectedItemList', role: 'listbox', 'aria-label': 'items selected' },
+              values.map((v) => h('li', { key: v, 'data-automation-id': 'menuItem', role: 'presentation' },
+                h('div', { 'data-automation-id': 'selectedItem', role: 'option' },
+                  h('span', { 'data-automation-id': 'DELETE_charm', role: 'presentation',
+                              onClick: () => onChange(values.filter((x) => x !== v)) }, '×'),
+                  h('p', { 'data-automation-id': 'promptOption', 'data-automation-label': v }, v)))))),
+          results.length > 0 && h('div', { className: 'popup', role: 'listbox' },
+            results.map((o) => h('div', { key: o, role: 'option', 'data-automation-id': 'menuItem',
+                                          onClick: () => { if (shownTerm) add(o); } },
+              h('div', { 'data-automation-id': 'promptLeafNode' },
+                h('p', { 'data-automation-id': 'promptOption', 'data-automation-label': o }, o))))));
+      }
+
+      /* Workday's date sections, from its own bundle: a display <div> over a
+         spinbutton <input> that is absolutely positioned, 1px wide and scaled
+         to 0.01. Clicking the display focuses the input; its onChange parses
+         digits. `parts` is ['Year'] (education) or ['Month','Year']. */
+      function DateField({ auto, fkit, label, value, onChange, parts = ['Year'] }) {
+        const refs = { Month: useRef(), Year: useRef() };
+        const max = { Month: 12, Year: 9999 };
+        return h('div', { 'data-automation-id': `formField-${auto}`, 'data-fkit-id': fkit },
+          h('fieldset', null, h('legend', null, h('label', null, label)),
+            h('div', { 'data-automation-id': 'dateInputWrapper', role: 'group', id: fkit },
+              parts.map((p) => {
+                const v = value?.[p.toLowerCase()] ?? null;
+                return h('div', { key: p, className: 'spin', onClick: () => refs[p].current.focus() },
+                  h('div', { 'data-automation-id': `dateSection${p}-display`, 'aria-hidden': 'true' },
+                    v === null ? (p === 'Year' ? 'YYYY' : 'MM') : String(v).padStart(p === 'Year' ? 4 : 2, '0')),
+                  h('input', { ref: refs[p], 'data-automation-id': `dateSection${p}-input`, role: 'spinbutton',
+                    'aria-label': p, 'aria-valuemin': 1, 'aria-valuemax': max[p],
+                    'aria-valuenow': v ?? undefined, value: v ?? '',
+                    style: { position: 'absolute', color: 'rgba(255,255,255,0.01)', left: 0, top: 0,
+                             overflow: 'hidden', transform: 'scale(0.01)', width: '1px', zIndex: -1000 },
+                    onChange: (e) => {
+                      const n = parseInt(String(e.target.value).slice(0, String(max[p]).length), 10);
+                      onChange({ ...(value ?? {}), [p.toLowerCase()]: isNaN(n) ? null : Math.min(n, max[p]) });
+                    } }));
+              }))));
+      }
+
+      function Checkbox({ auto, label, checked, onChange }) {
+        return h('div', { 'data-automation-id': `formField-${auto}` },
+          h('label', null, h('input', { type: 'checkbox', checked, onChange: (e) => onChange(e.target.checked) }), ' ', label));
+      }
+
+      /* A repeating section: Workday's group/heading wiring, numbered panels,
+         a Delete on each (but Education 1), and one add-button. */
+      function Section({ name, title, items, setItems, blank, render, firstUndeletable }) {
+        const update = (i) => (patch) => setItems((xs) => xs.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+        return h('div', { role: 'group', 'aria-labelledby': `${name}-section` },
+          h('h4', { id: `${name}-section` }, title),
+          items.map((it, i) => h('div', { key: it.key, role: 'group', 'aria-labelledby': `${name}-${i + 1}-panel`, className: 'entry' },
+            h('h5', { id: `${name}-${i + 1}-panel` }, `${title} ${i + 1}`),
+            !(firstUndeletable && i === 0) && h('button', { type: 'button', className: 'del',
+              onClick: () => setItems((xs) => xs.filter((_, j) => j !== i)) }, 'Delete'),
+            render(it, update(i), i))),
+          h('div', null, h('button', { type: 'button', className: 'add', 'data-automation-id': 'add-button',
+            onClick: () => setItems((xs) => [...xs, { ...blank(), key: Math.random().toString(36).slice(2) }]) },
+            items.length ? 'Add Another' : 'Add')));
+      }
+
+      const key = () => Math.random().toString(36).slice(2);
+
+      function Page() {
+        const [edu, setEdu] = useState([{
+          key: key(), school: 'Example State University', degree: "Bachelor's Degree (±16 years)",
+          fieldOfStudy: ['Widgetry'], gpa: '3.4', from: { year: 2015 }, to: { year: 2019 },
+        }]);
+        const [langLayout, setLangLayout] = useState('single');
+        const [langs, setLangs] = useState([]);
+        const [skills, setSkills] = useState(['Teamwork (Suggested)']);
+        const [sites, setSites] = useState([{ key: key(), url: 'https://github.example/testy-mctestface' }]);
+        const [linkedIn, setLinkedIn] = useState('');
+        const [workDate, setWorkDate] = useState(null);
+
+        window.__state = { edu, langs, skills, sites, linkedIn, workDate, langLayout };
+        window.__setLangLayout = (layout, initial = []) => { setLangLayout(layout); setLangs(initial.map((l) => ({ key: key(), ...l }))); };
+        window.__setSkills = setSkills;
+        window.__setEdu = setEdu;
+
+        const abilities = langLayout === 'single' ? ABILITY_SINGLE : ABILITY_SPLIT;
+        const scale = langLayout === 'single' ? NUMBERED : LINKEDIN;
+
+        return h('div', { 'data-automation-id': 'applyFlowPage' },
+          h('div', { 'data-automation-id': 'applyFlowMyExpPage' },
+            h('h3', null, 'My Experience'),
+
+            h(Section, {
+              name: 'Education', title: 'Education', items: edu, setItems: setEdu, firstUndeletable: true,
+              blank: () => ({ school: '', degree: '', fieldOfStudy: [], gpa: '', from: null, to: null }),
+              render: (e, set, i) => [
+                h(Text, { key: 's', auto: 'schoolName', fkit: `education-${i}--schoolName`, label: 'School or University',
+                          required: true, value: e.school, onChange: (v) => set({ school: v }) }),
+                h(Select, { key: 'd', auto: 'degree', fkit: `education-${i}--degree`, label: 'Degree*',
+                            value: e.degree, options: DEGREES, onChange: (v) => set({ degree: v }) }),
+                h(Prompt, { key: 'f', auto: 'fieldOfStudy', fkit: `education-${i}--fieldOfStudy`, label: 'Field of Study',
+                            values: e.fieldOfStudy, catalogue: FIELDS, multi: false,
+                            /* Entry 1 filters as you type; the rest search only on
+                               Enter, behind a default list, as the live tenant does. */
+                            searchOn: i === 0 ? 'type' : 'enter',
+                            /* As seen live: alphabetical, and holding the very
+                               option searched for — but clicking a row here
+                               selects nothing. */
+                            browse: ['Accounting', 'Actuarial Science', 'Advertising',
+                                     'Astro Gardening Technology', 'Business'], delay: 350,
+                            onQuery: (q) => window.__fosQueries.push(q),
+                            onChange: (v) => set({ fieldOfStudy: v }) }),
+                h(Text, { key: 'g', auto: 'gradeAverage', fkit: `education-${i}--gradeAverage`, label: 'Overall Result (GPA)',
+                          value: e.gpa, onChange: (v) => set({ gpa: v }) }),
+                h(DateField, { key: 'a', auto: 'firstYearAttended', fkit: `education-${i}--firstYearAttended`, label: 'From',
+                               value: e.from, onChange: (v) => set({ from: v }) }),
+                h(DateField, { key: 'b', auto: 'lastYearAttended', fkit: `education-${i}--lastYearAttended`,
+                               label: 'To (Actual or Expected)', value: e.to, onChange: (v) => set({ to: v }) }),
+              ],
+            }),
+
+            h(Section, {
+              name: 'Languages', title: 'Languages', items: langs, setItems: setLangs,
+              blank: () => ({ language: '', native: false, levels: {} }),
+              render: (l, set, i) => [
+                h(Select, { key: 'l', auto: 'language', fkit: `language-${i}--language`, label: 'Language*',
+                            value: l.language, options: LANGS, onChange: (v) => set({ language: v }) }),
+                // Abilities appear only once a language is chosen, as dependent fields do.
+                ...(l.language ? [
+                  langLayout === 'split' && h(Checkbox, { key: 'n', auto: 'native', label: 'I am fluent in this language.',
+                                                          checked: !!l.native, onChange: (v) => set({ native: v }) }),
+                  ...abilities.map((a) => h(Select, { key: a.id, auto: a.id, fkit: `language-${i}--${a.id}`, label: a.label,
+                    value: l.levels?.[a.id] ?? '', options: scale,
+                    onChange: (v) => set({ levels: { ...(l.levels ?? {}), [a.id]: v } }) })),
+                ] : []),
+              ],
+            }),
+
+            h('div', { role: 'group', 'aria-labelledby': 'Skills-section' },
+              h('h4', { id: 'Skills-section' }, 'Skills'),
+              h(Prompt, { auto: 'skills', fkit: 'skills--skills', label: 'Type to Add Skills', values: skills,
+                          catalogue: SKILLS, searchOn: 'enter', multi: true, onChange: setSkills })),
+
+            h(Section, {
+              name: 'Websites', title: 'Websites', items: sites, setItems: setSites,
+              blank: () => ({ url: '' }),
+              render: (s, set, i) => h(Text, { auto: 'url', fkit: `webAddress-${i}--url`, label: 'URL', required: true,
+                                                value: s.url, onChange: (v) => set({ url: v }) }),
+            }),
+
+            h('div', { role: 'group', 'aria-labelledby': 'Social-Network-URLs-section' },
+              h('h4', { id: 'Social-Network-URLs-section' }, 'Social Network URLs'),
+              h(Text, { auto: 'linkedInAccount', fkit: 'socialNetworkAccounts--linkedInAccount',
+                        label: 'Please provide your Linkedin profile:', value: linkedIn, onChange: setLinkedIn })),
+
+            /* Not part of the page: a month + year date, for the month path the
+               year-only education dates never exercise. */
+            h('div', { id: 'workDateBox' },
+              h(DateField, { auto: 'startDate', fkit: 'workExperience-1--startDate', label: 'From (month + year)',
+                             parts: ['Month', 'Year'], value: workDate, onChange: setWorkDate })),
+
+            h('button', { type: 'button', 'data-automation-id': 'pageFooterNextButton',
+              ref: (el) => { if (el && !el.__wired) { el.__wired = true; el.addEventListener('click', () => window.__nextClicks++); } } },
+              'Save and Continue')));
+      }
+
+      ReactDOM.flushSync(() => ReactDOM.createRoot(document.getElementById('root')).render(h(Page)));
+    </script>
+
+    <script type="module">
+      /* ================================================================
+       * 3. the real content scripts, in manifest order, cache-busted
+       * ============================================================== */
+      const ORDER = [
+        '../content/00-namespace.js', '../content/react-set.js', '../content/match.js',
+        '../content/experience.js', '../content/questions.js', '../content/radio-groups.js',
+        '../content/free-text.js', '../content/filler.js', '../content/guards.js',
+        '../sites/workday.js', '../sites/workday-experience.js', '../sites/index.js',
+        '../content/registry.js', '../content/widget.js', '../content/pill.js',
+      ];
+      const v = Date.now();
+      const load = (src) => new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = `${src}?v=${v}`;
+        s.onload = resolve;
+        s.onerror = () => reject(new Error(`failed to load ${src}`));
+        document.body.append(s);
+      });
+      for (const src of ORDER) await load(src);
+
+      // The one thing a harness cannot fake is the hostname; wrap, not replace.
+      const realCurrentSite = AF.currentSite;
+      AF.currentSite = (hostname = 'acme.wd5.myworkdayjobs.com') => realCurrentSite(hostname);
+      AF.debug = false;
+      await load('../content/main.js');
+
+      /* ================================================================
+       * 4. checks
+       * ============================================================== */
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const lines = [];
+      const wrong = [];
+      const check = (label, actual, expected) => {
+        const ok = JSON.stringify(actual) === JSON.stringify(expected);
+        lines.push(`${ok ? '  ok  ' : ' FAIL '} ${label}` +
+          (ok ? '' : `\n         got  ${JSON.stringify(actual)}\n         want ${JSON.stringify(expected)}`));
+        if (!ok) wrong.push(label);
+      };
+
+      async function waitUntil(fn, ms = 30000, what = 'condition') {
+        const end = Date.now() + ms;
+        for (;;) {
+          const r = fn();
+          if (r) return r;
+          if (Date.now() > end) throw new Error(`timed out waiting for ${what}`);
+          await sleep(50);
+        }
+      }
+
+      const shadow = () => document.getElementById('af-widget-host')?.shadowRoot;
+      const secButtons = () => [...(shadow()?.querySelectorAll('#sections button') ?? [])];
+      const secLabels = () => secButtons().map((b) => b.dataset.section);
+      const widgetMsg = () => shadow()?.getElementById('msg')?.textContent ?? '';
+      const submitBtn = () => {
+        const b = shadow()?.getElementById('secSubmit');
+        return b && !b.classList.contains('hidden') ? b : null;
+      };
+      const mainAction = () => {
+        const b = shadow()?.getElementById('action');
+        return b && !b.classList.contains('hidden') ? b.textContent : null;
+      };
+
+      /** Click a section's widget button and wait for it to finish. */
+      async function press(id) {
+        const btn = secButtons().find((b) => b.dataset.section === id);
+        if (!btn) throw new Error(`no ${id} button`);
+        btn.dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true }));
+        await waitUntil(() => secButtons().some((b) => b.classList.contains('running')), 3000, `${id} to start`);
+        await waitUntil(() => !secButtons().some((b) => b.disabled), 60000, `${id} to finish`);
+        await sleep(150);
+        return widgetMsg();
+      }
+
+      /** Results popups only — the pill lists are role="listbox" too. */
+      const openPopups = () => AF.sites.workday.visiblePopups()
+        .filter((p) => !p.closest('[data-automation-id="selectedItemList"]'));
+
+      const S = () => window.__state;
+
+      async function run() {
+        const t0 = performance.now();
+
+        /* ---- the widget on My Experience ---- */
+        await waitUntil(() => secButtons().length, 10000, 'the section buttons');
+        check('My Experience is recognised', AF.resolveContext().pageKey, 'myExperience');
+        check('it has one button per section, Websites included because the page has it',
+          secLabels(), ['all', 'education', 'languages', 'skills', 'websites']);
+        check('"Fill all" comes first, full width', [secButtons()[0].textContent, secButtons()[0].classList.contains('wide')],
+          ['Fill all', true]);
+        check('and no Fill / Submit main action', mainAction(), null);
+        check('the page has no submit selector for a fill to click', 'submit' in AF.sites.workday.pages.myExperience, false);
+        check('a Submit button sits under the section buttons',
+          [!!submitBtn(), submitBtn()?.previousElementSibling?.id], [true, 'sections']);
+        check('the vault is locked, and the buttons work anyway (profile only)',
+          secButtons().every((b) => !b.disabled), true);
+
+        /* ---- Education ---- */
+        let msg = await press('education');
+        const edu = S().edu;
+        check('education: one entry added — the other was already on the page', edu.length, 2);
+        check('the existing entry is the profile\'s second school; matching values untouched',
+          [edu[0].school, edu[0].degree, edu[0].fieldOfStudy, edu[0].from, edu[0].to],
+          ['Example State University', "Bachelor's Degree (±16 years)", ['Widgetry'], { year: 2015 }, { year: 2019 }]);
+        check('its differing GPA is replaced with the profile\'s', edu[0].gpa, '3.5');
+        check('the message is one short line, counts only', [/^Education: \d+ filled, 1 replaced, \d+ already set, 1 entry added\.$/.test(msg), msg.length < 120], [true, true]);
+        check('new entry: school', edu[1].school, 'Sample Tech Institute');
+        check('new entry: degree from ladder rung 2', edu[1].degree, "Master's Degree (±18 years)");
+        check('field of study: the exact rung 3 beats the prefix-only rung 2',
+          edu[1].fieldOfStudy, ['Astro Gardening Technology']);
+        check('GPA', edu[1].gpa, '3.9');
+        check('From (year spinbutton)', edu[1].from, { year: 2020 });
+        check('To: "05/2022" on a year-only field takes the year', edu[1].to, { year: 2022 });
+        check('no popup left open', openPopups().length, 0);
+        check('the display:none value inputs were never typed into', window.__hiddenWrites, []);
+
+        msg = await press('education');
+        check('pressed again: nothing added', S().edu.length, 2);
+        check('and nothing changed', S().edu[1].degree, "Master's Degree (±18 years)");
+        check('and it says so, in one line', msg.replace(/\d+/g, 'N'), 'Education: N already set.');
+
+        /* The first rung, found by its first search: the default browse list
+           that opens before the results is never read as the answer. */
+        window.__setEdu((xs) => xs.map((x, i) => (i === 1 ? { ...x, fieldOfStudy: [] } : x)));
+        await sleep(150);
+        window.__fosQueries = [];
+        const fosWrap = () => document.querySelectorAll('[data-automation-id="formField-fieldOfStudy"]')[1];
+        const first = await AF.sites.workday.experience.promptLadder(fosWrap(), ['Astro Gardening Technology', 'Widgetry']);
+        check('rung 1 on the list: set from the first search, no cycling',
+          [first.ok, first.rungIndex, S().edu[1].fieldOfStudy, window.__fosQueries.filter((q, i, a) => a.indexOf(q) === i)],
+          [true, 0, ['Astro Gardening Technology'], ['Astro Gardening Technology']]);
+
+        /* Prefilled values that differ — the résumé parse's — are replaced. */
+        window.__setEdu((xs) => xs.map((x, i) => (i === 1 ? { ...x, school: 'Sample Tech Inst.',
+          degree: "Associate's Degree (±14 years)", fieldOfStudy: ['Underwater Basketry'], gpa: '2.0', to: { year: 2030 } } : x)));
+        await sleep(150);
+        msg = await press('education');
+        check('a differing prefill is overwritten, not duplicated',
+          [S().edu.length, S().edu[1].school, S().edu[1].degree, S().edu[1].fieldOfStudy, S().edu[1].gpa, S().edu[1].to],
+          [2, 'Sample Tech Institute', "Master's Degree (±18 years)", ['Astro Gardening Technology'], '3.9', { year: 2022 }]);
+        check('and the count says what was replaced', /5 replaced/.test(msg), true);
+        check('still no hidden-input writes', window.__hiddenWrites, []);
+
+        /* ---- Languages, layout A: one numbered "Proficiency" dropdown ---- */
+        msg = await press('languages');
+        let langs = S().langs;
+        const lvl = (l) => Object.values(l.levels ?? {});
+        check('A: three entries — Toki Pona is not on the list, and its entry was taken back',
+          langs.map((l) => l.language), ['Esperanto', 'Volapük', 'Interlingua']);
+        check('A: fluent → the top of the numbered scale', lvl(langs[0]), ['5 - Fluent']);
+        check('A: intermediate overall on the single dropdown', lvl(langs[1]), ['3 - Intermediate']);
+        check('A: beginner → 1, not "Classroom Study"', lvl(langs[2]), ['1 - Beginner']);
+        check('A: the unlisted language is reported', /Toki Pona — "Toki Pona" is not on this list/.test(msg), true);
+        check('A: no popup left open', openPopups().length, 0);
+
+        msg = await press('languages');
+        check('A, pressed again: no duplicates', S().langs.length, 3);
+
+        /* ---- Languages, layout B: Reading / Writing / Speaking on the
+                LinkedIn scale, the fluent checkbox, one language listed already ---- */
+        window.__setLangLayout('split', [{ language: 'Interlingua', native: false,
+          levels: { '3f2a9c1e0b7d4e21': 'Elementary proficiency' } }]);
+        await sleep(200);
+        msg = await press('languages');
+        langs = S().langs;
+        check('B: the listed language is reused, the rest added — no duplicate Interlingua',
+          langs.map((l) => l.language), ['Interlingua', 'Esperanto', 'Volapük']);
+        const [inter, espe, vola] = langs;
+        const R = '3f2a9c1e0b7d4e21', Wr = 'a91d77c3e5f04b10', Sp = '5e0b2d8f6a1c4f93';
+        check('B: fluent → "Native or bilingual proficiency" on every skill',
+          [espe.levels[R], espe.levels[Wr], espe.levels[Sp]],
+          Array(3).fill('Native or bilingual proficiency'));
+        check('B: fluent ticks "I am fluent in this language"', espe.native, true);
+        check('B: per-skill level used where set (reading: advanced)', vola.levels[R], 'Professional working proficiency');
+        check('B: overall used for the rest (intermediate)', [vola.levels[Wr], vola.levels[Sp]],
+          ['Limited working proficiency', 'Limited working proficiency']);
+        check('B: not fluent → the box is left unticked', vola.native, false);
+        check('B: an existing level that matches the profile stays', inter.levels[R], 'Elementary proficiency');
+        check('B: and its blanks are filled', [inter.levels[Wr], inter.levels[Sp]],
+          ['Elementary proficiency', 'Elementary proficiency']);
+        check('B: no popup left open', openPopups().length, 0);
+        check('B: still no hidden-input writes', window.__hiddenWrites, []);
+
+        /* ---- Skills: catalogue prompt that searches on Enter ---- */
+        msg = await press('skills');
+        check('skills: added beside the suggested one, never removing it', S().skills,
+          ['Teamwork (Suggested)', 'Java (Programming Language)', 'Python (Programming Language)', 'Widget Design']);
+        check('"Java" did not become JavaScript', S().skills.includes('JavaScript'), false);
+        check('an unlisted skill is reported, not approximated', /Kubernetes — /.test(msg), true);
+        check('no popup left open', openPopups().length, 0);
+        check('no stray query left in the search box',
+          document.querySelector('[data-automation-id="formField-skills"] input').value, '');
+
+        msg = await press('skills');
+        check('skills, pressed again: no duplicates', S().skills.length, 4);
+
+        /* Enter that commits the wrong row on its own — removed at once. */
+        window.__setSkills(['Teamwork (Suggested)']);
+        window.__enterCommits = true;
+        await sleep(100);
+        const trap = await AF.sites.workday.experience.promptPick(
+          document.querySelector('[data-automation-id="formField-skills"]'), 'Java',
+          (t) => AF.experience.bestPromptOption(t, 'Java'));
+        window.__enterCommits = false;
+        check('an Enter that selects the wrong row is not accepted', trap.ok, false);
+        check('and the wrong pill is removed again', S().skills, ['Teamwork (Suggested)']);
+
+        /* ---- Websites ---- */
+        msg = await press('websites');
+        check('websites: the GitHub link already there is not added twice, the others are',
+          S().sites.map((s) => s.url),
+          ['https://github.example/testy-mctestface', 'https://linkedin.example/in/testy-mctestface',
+           'https://testy.example']);
+        check('the Social Network LinkedIn box is filled', S().linkedIn, 'https://linkedin.example/in/testy-mctestface');
+        msg = await press('websites');
+        check('websites, pressed again: nothing added', S().sites.length, 3);
+
+        /* ---- the month + year date path ---- */
+        const rep = { filled: [], already: [], kept: [], left: [], failed: [] };
+        await AF.sites.workday.experience.setDate(
+          document.querySelector('#workDateBox [data-automation-id="formField-startDate"]'), 'Aug 2018', 'start', rep);
+        check('a month + year date takes both parts', S().workDate, { month: 8, year: 2018 });
+
+        /* ---- the whole run ---- */
+        check('Next was never clicked, by any button', window.__nextClicks, 0);
+        const before = JSON.stringify(S());
+        window.__sent = [];
+        await new Promise((resolve) => window.__onMessage({ type: 'fillNow' }, {}, resolve));
+        await sleep(100);
+        check('the popup\'s "Fill this page" points at the buttons instead',
+          /use the section buttons/.test(widgetMsg()), true);
+        check('and fills nothing, asks for no fill data', [JSON.stringify(S()) === before,
+          window.__sent.some((m) => m.type === 'getFillData')], [true, false]);
+        check('Next still never clicked', window.__nextClicks, 0);
+
+        /* ---- Fill all: every section in order, one short line ---- */
+        msg = await press('all');
+        check('Fill all: one summary line for every section',
+          [/^All sections: /.test(msg), msg.length < 200], [true, true]);
+        check('and each section gets its mark', secButtons().slice(1).every((b) => b.querySelector('.sec-mark')), true);
+        check('Fill all changes nothing already right', S().edu.length, 2);
+        check('Fill all never clicks Next', window.__nextClicks, 0);
+
+        /* ---- Submit: one click on Next, nothing else required first ---- */
+        submitBtn().dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true }));
+        await waitUntil(() => window.__nextClicks > 0, 3000, 'Next to be clicked');
+        await sleep(400);
+        check('Submit clicks Next exactly once', window.__nextClicks, 1);
+        check('and says so', /^Submitted/.test(widgetMsg()), true);
+        check('no popup left open after Submit', openPopups().length, 0);
+
+        lines.push(`  --   whole run took ${Math.round(performance.now() - t0)} ms`);
+      }
+
+      let crashed = null;
+      try { await run(); } catch (err) { crashed = err; lines.push(` FAIL  crashed: ${err?.stack ?? err}`); wrong.push('crashed'); }
+
+      const passed = lines.filter((l) => l.startsWith('  ok')).length;
+      const failed = lines.filter((l) => l.startsWith(' FAIL')).length;
+      document.getElementById('out').textContent = lines.join('\n');
+      const verdict = document.getElementById('verdict');
+      verdict.className = failed ? 'fail' : 'pass';
+      verdict.textContent = `${passed} passed, ${failed} failed`;
+      window.__check = async () => wrong;
+      window.__lines = lines;
+    </script>
+  </body>
+</html>

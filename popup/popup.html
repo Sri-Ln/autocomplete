@@ -58,6 +58,7 @@
       <nav class="tabs" role="tablist">
         <button class="tab active" data-tab="login" role="tab">Login</button>
         <button class="tab" data-tab="profile" role="tab">Profile</button>
+        <button class="tab" data-tab="experience" role="tab">Experience</button>
         <button class="tab" data-tab="answers" role="tab">Answers</button>
         <button class="tab" data-tab="settings" role="tab">Settings</button>
       </nav>
@@ -275,6 +276,94 @@
         </p>
 
         <button class="primary" id="saveProfileBtn">Save profile</button>
+      </div>
+
+      <!-- ---- experience (My Experience page) ---- -->
+      <div class="panel" data-panel="experience" hidden>
+        <p class="fine">
+          Used on the <b>My Experience</b> page, where the widget has one button
+          per section. Each makes its own section match what is saved here,
+          replacing pre-filled values that differ. Next is clicked only by the
+          widget's Submit.
+        </p>
+
+        <div class="divider">Education</div>
+        <!-- Two fixed slots: Education 1 and Education 2 on the page. -->
+        <div class="card edu" data-edu="0">
+          <h2>Education 1</h2>
+          <div class="stack tight">
+            <label>School<input type="text" data-k="school" /></label>
+            <label>
+              Degree <span class="opt">one per line, best first</span>
+              <textarea data-k="degree" rows="2" placeholder="Master's Degree&#10;Master of Science"></textarea>
+            </label>
+            <label>
+              Field of study <span class="opt">one per line, best first</span>
+              <textarea data-k="fieldOfStudy" rows="3"
+                        placeholder="Marine Biology&#10;Biology"></textarea>
+            </label>
+            <div class="grid3">
+              <label>From<input type="text" data-k="from" placeholder="2019" /></label>
+              <label>To<input type="text" data-k="to" placeholder="05/2023" /></label>
+              <label>GPA<input type="text" data-k="gpa" /></label>
+            </div>
+          </div>
+        </div>
+        <div class="card edu" data-edu="1">
+          <h2>Education 2</h2>
+          <div class="stack tight">
+            <label>School<input type="text" data-k="school" /></label>
+            <label>
+              Degree <span class="opt">one per line, best first</span>
+              <textarea data-k="degree" rows="2" placeholder="Bachelor's Degree&#10;Bachelor of Science"></textarea>
+            </label>
+            <label>
+              Field of study <span class="opt">one per line, best first</span>
+              <textarea data-k="fieldOfStudy" rows="3"
+                        placeholder="Economics&#10;Business"></textarea>
+            </label>
+            <div class="grid3">
+              <label>From<input type="text" data-k="from" placeholder="2015" /></label>
+              <label>To<input type="text" data-k="to" placeholder="2019" /></label>
+              <label>GPA<input type="text" data-k="gpa" /></label>
+            </div>
+          </div>
+        </div>
+        <p class="fine">
+          Every company words these lists differently, so Degree and Field of
+          study take a <b>ladder</b>: the answers you would accept, best first.
+          The first one that is on the company's list is picked — word for word
+          before anything looser — and if none is, the field is left for you.
+          Dates: <b>2019</b> or <b>08/2019</b>.
+        </p>
+
+        <div class="divider">Languages</div>
+        <div id="langList" class="stack"></div>
+        <button class="ghost" id="addLangBtn" type="button">+ Add language</button>
+        <p class="fine">
+          Levels are matched to each company's own scale — "Fluent" picks the
+          top of whatever it offers, whether that is "5 - Fluent" or "Native or
+          bilingual". A scale the extension can't read is left for you. Fluent or
+          Native overall also ticks "I am fluent in this language".
+        </p>
+
+        <div class="divider">Skills</div>
+        <label>
+          Skills <span class="opt">one per line</span>
+          <textarea id="skills" rows="4" placeholder="Python&#10;SQL"></textarea>
+        </label>
+        <p class="fine">
+          Added alongside the ones Workday suggests from your résumé; those are
+          never removed. A skill not on the company's list is skipped.
+        </p>
+
+        <div class="divider">Websites</div>
+        <label>LinkedIn<input type="text" id="web_linkedin" placeholder="linkedin.com/in/…" /></label>
+        <label>GitHub<input type="text" id="web_github" placeholder="github.com/…" /></label>
+        <label>Portfolio<input type="text" id="web_portfolio" /></label>
+        <label>Other<input type="text" id="web_other" /></label>
+
+        <button class="primary" id="saveExperienceBtn">Save experience</button>
       </div>
 
       <!-- ---- learned answers ---- -->
