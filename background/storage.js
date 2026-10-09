@@ -78,10 +78,109 @@ export const EMPTY_PROFILE = {
    * Never written during an ordinary fill — it is offered, and a click accepts
    * it. See content/free-text.js. */
   visaExplanation: '',
+
+  /* ---- My Experience (sites/workday-experience.js) ----
+   *
+   * Option lists on this page are written per tenant, so nothing here is a
+   * tenant's label. Degree and field of study are LADDERS — the user's
+   * acceptable answers, most preferred first — and the filler takes the first
+   * rung the form's list actually carries. Language levels are SEMANTIC
+   * (see LANGUAGE_LEVELS) and are mapped onto each tenant's own scale at fill
+   * time. See content/experience.js for both. */
+
+  /* Exactly two slots — the page's Education 1 and Education 2. */
+  education: [emptyEducation(), emptyEducation()],
+
+  /* [{ language, overall, reading, writing, speaking, comprehension }]. A
+   * blank skill level means "use overall". */
+  languages: [],
+
+  skills: [],
+
+  websites: { linkedin: '', github: '', portfolio: '', other: '' },
 };
 
+function emptyEducation() {
+  return { school: '', degree: [], fieldOfStudy: [], gpa: '', from: '', to: '' };
+}
+
 /** Profile keys holding arrays rather than strings. */
-export const PROFILE_LIST_FIELDS = ['employers', 'relativesAt'];
+export const PROFILE_LIST_FIELDS = ['employers', 'relativesAt', 'skills'];
+
+/** The only values a language level may take. '' means "not set". */
+export const LANGUAGE_LEVELS = ['', 'beginner', 'intermediate', 'advanced', 'fluent', 'native'];
+
+const LANGUAGE_SKILLS = ['overall', 'reading', 'writing', 'speaking', 'comprehension'];
+const MAX_LANGUAGES = 12;
+const MAX_LADDER = 8;
+
+/* ---- sanitising the nested My Experience fields ----
+ *
+ * The same whitelist rule as the flat fields, one level down: only known keys
+ * survive, every string is trimmed, and nothing the popup did not mean to send
+ * rides along into storage. Also applied on READ (see getProfile), so a
+ * profile saved before these fields existed, or edited by hand, still comes
+ * back in the shape the filler expects. */
+
+const str = (v) => String(v ?? '').trim();
+
+/** One-per-line text or an array → a deduped ladder, order kept. */
+function cleanLadder(v) {
+  const list = Array.isArray(v) ? v : String(v ?? '').split('\n');
+  const out = [];
+  for (const item of list) {
+    const s = str(item);
+    if (s && !out.some((x) => x.toLowerCase() === s.toLowerCase())) out.push(s);
+  }
+  return out.slice(0, MAX_LADDER);
+}
+
+function cleanEducation(list) {
+  const src = Array.isArray(list) ? list : [];
+  return [0, 1].map((i) => {
+    const e = src[i] && typeof src[i] === 'object' ? src[i] : {};
+    return {
+      school: str(e.school),
+      degree: cleanLadder(e.degree),
+      fieldOfStudy: cleanLadder(e.fieldOfStudy),
+      gpa: str(e.gpa),
+      from: str(e.from),
+      to: str(e.to),
+    };
+  });
+}
+
+function cleanLanguages(list) {
+  const out = [];
+  for (const l of Array.isArray(list) ? list : []) {
+    if (!l || typeof l !== 'object') continue;
+    const language = str(l.language);
+    if (!language || out.some((x) => x.language.toLowerCase() === language.toLowerCase())) continue;
+    const entry = { language };
+    for (const k of LANGUAGE_SKILLS) {
+      const level = str(l[k]).toLowerCase();
+      entry[k] = LANGUAGE_LEVELS.includes(level) ? level : '';
+    }
+    out.push(entry);
+  }
+  return out.slice(0, MAX_LANGUAGES);
+}
+
+function cleanWebsites(w) {
+  const src = w && typeof w === 'object' ? w : {};
+  return {
+    linkedin: str(src.linkedin),
+    github: str(src.github),
+    portfolio: str(src.portfolio),
+    other: str(src.other),
+  };
+}
+
+const PROFILE_SHAPED_FIELDS = {
+  education: cleanEducation,
+  languages: cleanLanguages,
+  websites: cleanWebsites,
+};
 
 export const DEFAULT_SETTINGS = {
   autoSubmit: true,   // false → widget fills, then waits for a second click
@@ -103,13 +202,21 @@ export const getMeta = () => getLocal(K_META, null);
 export const setMeta = (meta) => setLocal(K_META, meta);
 
 export async function getProfile() {
-  return { ...EMPTY_PROFILE, ...(await getLocal(K_PROFILE, {})) };
+  const stored = await getLocal(K_PROFILE, {});
+  const profile = { ...EMPTY_PROFILE, ...stored };
+  /* Fresh nested objects every read — never EMPTY_PROFILE's own, which a
+   * caller mutating its copy would otherwise change for everyone after it. */
+  for (const [k, clean] of Object.entries(PROFILE_SHAPED_FIELDS)) profile[k] = clean(stored[k]);
+  if (!Array.isArray(profile.skills)) profile.skills = [];
+  return profile;
 }
 export function setProfile(profile) {
   // Whitelist: never let an unexpected key ride along into storage.
   const clean = {};
   for (const k of Object.keys(EMPTY_PROFILE)) {
-    if (PROFILE_LIST_FIELDS.includes(k)) {
+    if (PROFILE_SHAPED_FIELDS[k]) {
+      clean[k] = PROFILE_SHAPED_FIELDS[k](profile[k]);
+    } else if (PROFILE_LIST_FIELDS.includes(k)) {
       const list = Array.isArray(profile[k])
         ? profile[k]
         : String(profile[k] ?? '').split(/[\n,]/);

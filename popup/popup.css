@@ -516,3 +516,72 @@ code {
   background: #2b1717;
   color: #f09a9a;
 }
+
+/* ── experience tab ──────────────────────────────────────────────────
+ * Education cards and language cards. Both reuse .card and .stack; .tight
+ * closes the gap inside a card so one entry reads as one block, and .grid3 is
+ * the From / To / GPA row, three short values that fit side by side. */
+
+.stack.tight {
+  gap: 8px;
+}
+.grid3 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 7px;
+}
+.card.edu h2,
+.card.lang h2 {
+  margin-bottom: 8px;
+}
+
+/* A language card's head: the name box and its remove button on one line. */
+.lang-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.lang-head input {
+  margin-top: 0;
+}
+.lang-head button {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 15px;
+  line-height: 1;
+}
+.lang-head button:hover {
+  color: var(--danger);
+  background: #2b1717;
+}
+
+/* Six levels on one segmented control. Narrower segments than the Yes/No
+ * ones so all six fit beside a label in a 330px popup. */
+.seg.lvl button {
+  min-width: 0;
+  padding: 4px 6px;
+  font-size: 11px;
+}
+.qrow.lvl .qlabel {
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+
+details.per-skill summary {
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--text-faint);
+  margin: 2px 0;
+}
+details.per-skill summary:hover {
+  color: var(--text-dim);
+}
+details.per-skill[open] summary {
+  margin-bottom: 4px;
+}
+
