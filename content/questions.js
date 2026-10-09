@@ -260,7 +260,8 @@ AF.questions.visaExplanationFor = function (profile = {}) {
 /* Things whose presence means the answer varies by that thing. A question
  * containing any of these can never be recalled. */
 const VARIABLE_MARKERS = [
-  /\b(?:for|at|with|of|to)\s+[A-Z][A-Za-z0-9&.\-]*(?:\s+(?:Inc|LLC|Ltd|Corp|Co|Group|Technologies|Labs)\b\.?)?/,
+  /* "by" catches the passive phrasing: "previously been employed by Acme Insurance". */
+  /\b(?:for|at|with|of|to|by)\s+[A-Z][A-Za-z0-9&.\-]*(?:\s+(?:Inc|LLC|Ltd|Corp|Co|Group|Technologies|Labs)\b\.?)?/,
   /\bour\b|\bthis (company|role|position|organi[sz]ation)\b|\bus\b/i,
 ];
 
@@ -298,7 +299,17 @@ function extractOrg(rule, text) {
     const m = text.match(re);
     if (m?.[1]) {
       return m[1]
-        .replace(/\b(as|an?|the)\b.*$/i, '')
+        /* A parenthetical defines the company, it is not part of its name:
+         *   "Acme Insurance (including any company affiliated with or acquired
+         *    by Acme Insurance)"
+         * Left in, it both mangles the name shown back to the user and lets an
+         * affiliate named in the brackets score a match the user never earned. */
+        .replace(/\s*\(.*$/, '')
+        /* Trailing qualifier: "Initech as of 2019", "Globex the parent company".
+         * The leading \s+ is load-bearing — without it "Acme Insurance" matched
+         * "the" at position 0 and the whole name was deleted, which is how this
+         * question came back unanswered on a live application. */
+        .replace(/\s+\b(as|an?|the)\b.*$/i, '')
         .replace(/[,.]$/, '')
         .trim();
     }

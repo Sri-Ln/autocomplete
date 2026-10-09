@@ -9,15 +9,32 @@ Manifest V3, vanilla JS, no build step, no dependencies.
 |---|---|---|
 | **Create Account** | real | live page, 2026-09-10 |
 | **Sign In** | real | live page, 2026-09-10 |
-| My Information | placeholder | needs an account to reach |
+| **My Information** | real | two live tenants, 2026-09-13 and 2026-09-22 |
+| **My Experience** | real, except inside a language entry | a saved live page, 2026-10-08; `test/myexp-harness.html` |
 
-Create Account and Sign In work now. My Information does not — reaching it
-requires a signed-in account and an open job application, so those 8 fields are
-still `REPLACE_ME_*`.
+My Experience has no Fill button. The widget shows one button per section —
+**Education**, **Languages**, **Skills**, **Websites** — and each makes its own
+section match the popup's **Experience** tab: entries already on the page are
+reused before Add is clicked, and a pre-filled value that differs is replaced
+(skills are only ever added). Under them, **Submit** clicks the page's Next;
+it does not require any section to have been filled first. Degree and Field of study are *ladders* (acceptable answers, best
+first); language levels are semantic and mapped onto each tenant's own scale.
+See `sites/workday-experience.js` and `content/experience.js`.
+
+All three fill. My Information covers the text fields plus the four widgets the
+generic filler cannot touch — State, Country, Country Phone Code and Phone
+Device Type — and answers the Yes/No questions on the page from your profile.
+It always takes two clicks: fill, look, submit. See **Two-step pages** below.
 
 ```
-grep -rn REPLACE_ME sites/     # 13 remaining, all on My Information
+grep -rn REPLACE_ME sites/     # 3 remaining, all errorSelectors
 ```
+
+The three left are error-message containers. These forms validate on submit
+rather than on blur, so the container had not rendered on any page harvested so
+far — and `content/guards.js` already catches errors generically through
+`[role="alert"]` and `[aria-invalid="true"]`, so a placeholder there costs
+nothing but a less specific message.
 
 ### Two Workday facts worth knowing
 
@@ -265,6 +282,7 @@ aren't debugging the setter and your selectors at the same time.
   ├─ unlock if needed (passphrase → PBKDF2 → key in storage.session)
   ├─ registry: which site, which page type?
   ├─ fill each mapped field    (each write isolated; one failure never aborts)
+  ├─ two-step page, or autoSubmit off?  → STOP HERE, button becomes "Submit"
   ├─ safety scan:  CAPTCHA visible?  field still empty?  validation error?
   │                unmapped required field?  submit button disabled?
   │        any hit → ABORT, widget says exactly which
@@ -273,6 +291,14 @@ aren't debugging the setter and your selectors at the same time.
 
 Re-clicking is safe. Fields already holding the right value are skipped, so a
 partial fill finishes cleanly on a second click.
+
+**Two-step pages.** A page definition can set `confirmBeforeSubmit: true` and
+then it always takes two clicks — fill, look, submit — no matter what the
+autoSubmit setting says. My Information has it: that page is a live application
+rather than a signup form, and it is the one where a wrong dropdown answer
+cannot be taken back once the next step has loaded. The safety scan still runs,
+on the second click, against the DOM as it stands then. Turning off **Submit
+automatically** in the popup's Settings tab does the same thing for every page.
 
 ## Files
 
