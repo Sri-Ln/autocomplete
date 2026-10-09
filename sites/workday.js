@@ -165,6 +165,11 @@ AF.sites.workday = {
           kind: 'multiselect',
           label: 'How Did You Hear About Us',
           value: (ctx) => ctx.profile.source,
+          /* Every tenant words and nests this list its own way, so no single
+           * profile value answers it everywhere. Whatever is selected at
+           * submit — matched by us or picked by you — is remembered for this
+           * host and tried first next time. See readRemembered(). */
+          remember: true,
         },
         state: {
           selector: [
@@ -243,8 +248,13 @@ AF.sites.workday = {
             continue;
           }
 
-          const wanted = picker.value(ctx);
-          if (!wanted) {
+          /* This company's remembered answer first — it is an exact option
+           * label from this very list — then the profile value. */
+          const remembered = picker.remember ? ctx.remembered?.[key] : null;
+          const attempts = [remembered, picker.value(ctx)].filter(
+            (v, i, a) => v && a.indexOf(v) === i
+          );
+          if (!attempts.length) {
             report.skipped.push(key);
             continue;
           }
@@ -256,11 +266,15 @@ AF.sites.workday = {
             : W.pickFromListbox;
 
           let result;
-          try {
-            result = await fn(picker.selector, wanted, picker.labelFallback);
-          } catch (err) {
-            AF.log(`picker ${key} threw`, err);
-            result = { ok: false, reason: String(err?.message ?? err) };
+          for (const wanted of attempts) {
+            try {
+              result = await fn(picker.selector, wanted, picker.labelFallback);
+            } catch (err) {
+              AF.log(`picker ${key} threw`, err);
+              result = { ok: false, reason: String(err?.message ?? err) };
+            }
+            if (result.ok || result.notPresent) break;
+            if (wanted === remembered) AF.log(`remembered ${key} "${wanted}" not on this list`);
           }
 
           if (result.ok) {
@@ -306,6 +320,24 @@ AF.sites.workday = {
         if (AF.setNativeValue(el, '')) (report.cleared ??= []).push('phoneExtension');
       },
 
+      /**
+       * What the remembered pickers hold right now — { key: option label }.
+       *
+       * Read at submit, so it captures the final answer whoever chose it: our
+       * match, or you picking by hand after we left the field for you.
+       */
+      readRemembered() {
+        const W = AF.sites.workday;
+        const out = {};
+        for (const [key, picker] of Object.entries(this.pickers)) {
+          if (!picker.remember) continue;
+          const wrap = W.resolveWrapper(picker.selector, picker.labelFallback);
+          if (!wrap) continue;
+          const value = W.currentValue(wrap);
+          if (value) out[key] = value;
+        }
+        return out;
+      },
 
       /**
        * Leave the form settled before Continue is clicked.
