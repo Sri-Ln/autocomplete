@@ -29,11 +29,13 @@ export const EMPTY_PROFILE = {
   firstName: '',
   lastName: '',
   phone: '',
+  phoneExtension: '', // digits only; left empty on most applications
   address1: '',
   address2: '', // apt / unit — not present on every tenant's form
   city: '',
   state: '',   // "MA" or "Massachusetts"; expanded before matching
   zip: '',
+  county: '',  // only some tenants ask; "Suffolk" finds "Suffolk County"
   country: '',
 
   /* Answer to "How Did You Hear About Us?".

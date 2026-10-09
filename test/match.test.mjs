@@ -202,5 +202,37 @@ check('exact name beats a longer-prefix sibling',
 check('CA does not acronym-match Canada', AF.bestMatch(REAL_COUNTRIES, ['CA']), null);
 check('JP does not acronym-match Japan', AF.bestMatch(REAL_COUNTRIES, ['JP']), null);
 
+/* ---------------- naming the tenant ----------------
+ *
+ * From a real application: "How Did You Hear About Us?" on acmeinsurance.wd5
+ * nests the answer as "Career Site" › "Acme Insurance Career Section". Once the
+ * category is open, picking between its children is a question of which one
+ * names this company — and the hostname spells it "acmeinsurance" while the
+ * option spells it "Acme Insurance", so scoring alone cannot connect them. */
+
+const ACME_INS = 'acmeinsurance.wd5.myworkdayjobs.com';
+
+check('scoring alone cannot see it',
+  AF.scoreMatch('Acme Insurance Career Section', 'acmeinsurance'), 0);
+check('but the squashed comparison can',
+  AF.mentionsTenant('Acme Insurance Career Section', ACME_INS), true);
+check('a sibling that does not name the company',
+  AF.mentionsTenant('Third-Party Recruiter', ACME_INS), false);
+check('punctuation and case are ignored',
+  AF.mentionsTenant('acme insurance — careers', ACME_INS), true);
+check('nvidia tenant in a longer option',
+  AF.mentionsTenant('NVIDIA Careers Page', 'nvidia.wd5.myworkdayjobs.com'), true);
+check('no tenant in the hostname, no claim',
+  AF.mentionsTenant('Career Site', 'wd3.myworkdayjobs.com'), false);
+
+/* A short slug is a substring of too much ordinary English to be evidence of
+ * anything. "ge" would otherwise claim all three of these. */
+check('a two-letter tenant claims nothing',
+  AF.mentionsTenant('General Electric Career Site', 'ge.wd1.myworkdayjobs.com'), false);
+check('...nor an unrelated option',
+  AF.mentionsTenant('College Career Fair', 'ge.wd1.myworkdayjobs.com'), false);
+check('four characters is the floor',
+  AF.mentionsTenant('Acme Corp Career Section', 'acme.wd1.myworkdayjobs.com'), true);
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

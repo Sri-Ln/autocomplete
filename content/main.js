@@ -28,22 +28,54 @@
   let visaPending = 0;
 
   /**
-   * Every message in one place, and never allowed to throw.
+   * How long to wait for the service worker before giving up on a message.
+   *
+   * Generous: waking a stopped MV3 worker and deriving nothing is fast, but
+   * getFillData decrypts, and a cold worker on a busy machine is not instant.
+   */
+  const REPLY_TIMEOUT_MS = 10000;
+
+  /**
+   * Every message in one place, and never allowed to throw — or to hang.
    *
    * `chrome.runtime.sendMessage` rejects outright once the extension is
    * reloaded from chrome://extensions while an old tab is still open — the
    * classic "Extension context invalidated". Without this the widget would
    * die silently on every reload during development.
+   *
+   * The timeout covers the worse failure, which is silent rather than loud: a
+   * worker that ACCEPTS the message and never replies. MV3 can stop a worker
+   * mid-handler, and the reply then never comes and never rejects either. The
+   * await sat there forever, `busy` stayed true, and the button stayed disabled
+   * on "Working…" with no error and no way back short of reloading the page.
+   * A null return puts us on the ordinary "could not load your details" path.
    */
   async function send(msg) {
+    let timer;
     try {
-      return await chrome.runtime.sendMessage(msg);
+      const reply = await Promise.race([
+        chrome.runtime.sendMessage(msg),
+        new Promise((resolve) => {
+          timer = setTimeout(() => resolve(TIMED_OUT), REPLY_TIMEOUT_MS);
+        }),
+      ]);
+
+      if (reply === TIMED_OUT) {
+        AF.log('no reply from the service worker for', msg?.type);
+        return null;
+      }
+      return reply;
     } catch (err) {
       AF.log('sendMessage failed', err);
       contextLost = true;
       return null;
+    } finally {
+      clearTimeout(timer);
     }
   }
+
+  /** Distinct from null, which a handler may legitimately return. */
+  const TIMED_OUT = Symbol('timed out');
 
   let contextLost = false;
 
@@ -547,6 +579,11 @@
       });
     }
 
+    /* The button must not promise something it will not do. On a page that
+     * always takes two clicks, "Fill & Submit" is a lie about the first one. */
+    const twoStep =
+      ctx.page?.confirmBeforeSubmit === true || status.settings?.autoSubmit === false;
+
     AF.widget.render({
       context,
       tone: lastMessage?.kind === 'err' ? 'err' : lastMessage?.kind === 'ok' ? 'ok' : null,
@@ -554,7 +591,9 @@
         ? 'Working…'
         : awaitingSubmitConfirm
           ? 'Submit'
-          : 'Fill & Submit',
+          : twoStep
+            ? 'Fill'
+            : 'Fill & Submit',
       disabled: busy,
       message: lastMessage,
     });
@@ -685,16 +724,20 @@
     }
 
     lastRun = { values, report, questions };
+    /* Two clicks, either because the user asked for it globally or because this
+     * page always gets them. See `confirmBeforeSubmit` in sites/workday.js: a
+     * page can insist on a review step regardless of the setting. */
+    const twoStep =
+      ctx.page.confirmBeforeSubmit === true || data.settings?.autoSubmit === false;
 
-    const autoSubmit = data.settings?.autoSubmit !== false;
     const summary = AF.summarize(report);
     const via = data.source === 'override' ? ' (host-specific login)' : '';
 
     const qNote = describeQuestions(questions);
 
-    if (!autoSubmit) {
+    if (twoStep) {
       awaitingSubmitConfirm = true;
-      return say('info', `${summary}${via}${qNote}. Review, then click Submit.`);
+      return say('info', `${summary}${via}${qNote}. Review it, then click Submit.`);
     }
 
     say('info', `${summary}${via}${qNote}. Checking before submit…`);
@@ -791,7 +834,24 @@
      * one company can never be served to another. */
     await captureAnswersNow();
 
+    /* Let the adapter put the page down gently before we navigate it.
+     *
+     * A dropdown left open is not a cosmetic problem. Workday renders these
+     * prompts as portals, and clicking Continue while one is mounted tears the
+     * portal down in the middle of a navigation — inside the site's own React
+     * tree, where an exception is not ours to catch and takes the application
+     * page with it. Closing the popup and blurring first costs a quarter of a
+     * second. Optional, and never allowed to stop a submit. */
+    if (typeof ctx.page.beforeSubmit === 'function') {
+      try {
+        await ctx.page.beforeSubmit();
+      } catch (err) {
+        AF.log('beforeSubmit threw', err);
+      }
+    }
+
     const btn = document.querySelector(ctx.page.submit);
+    if (!btn) return say('err', 'Submit button vanished before the click.');
     btn.click();
 
     awaitingSubmitConfirm = false;
