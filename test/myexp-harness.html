@@ -100,7 +100,7 @@
           // Not on the tenant's list: the entry added for it must be taken back.
           { language: 'Toki Pona', overall: 'fluent', reading: '', writing: '', speaking: '', comprehension: '' },
         ],
-        skills: ['Java', 'Python', 'Teamwork', 'Widget Design', 'Kubernetes'],
+        skills: ['Java', 'Python', 'Teamwork', 'Widget Design', 'Kubernetes', 'C#'],
         websites: {
           linkedin: 'linkedin.example/in/testy-mctestface',
           github: 'github.example/testy-mctestface/',   // already there, differently written
@@ -147,7 +147,8 @@
       const FIELDS = ['Applied Widgetry', 'Widgetry', 'Widgetry Education', 'Astro Gardening',
         'Astro Gardening Technology', 'General Studies', 'Underwater Basketry'];
       const SKILLS = ['JavaScript', 'Java (Programming Language)', 'Java Spring',
-        'Python (Programming Language)', 'Teamwork', 'Widget Design', 'Gadgetry'];
+        'Python (Programming Language)', 'Teamwork', 'Widget Design', 'Gadgetry',
+        'C', 'Visual C#', 'C#', 'Turbo C'];
       const LANGS = ['Select One', 'Esperanto', 'Interlingua', 'Klingon', 'Volapük'];
       const NUMBERED = ['Select One', '1 - Beginner', '2 - Classroom Study', '3 - Intermediate',
         '4 - Advanced', '5 - Fluent'];
@@ -208,7 +209,10 @@
       /* `browse` + `delay`: as Workday's Field of Study does, clicking in opens
          a default browse list straight away, and the results for what was
          typed replace it only `delay` ms later. */
-      function Prompt({ auto, fkit, label, values, onChange, catalogue, searchOn, multi, browse, delay = 0, onQuery }) {
+      /* `checkboxes`: as the live Skills list does, each result carries a
+         checkbox, and only ticking the box selects it — a click on the row
+         itself does nothing. */
+      function Prompt({ auto, fkit, label, values, onChange, catalogue, searchOn, multi, browse, delay = 0, onQuery, checkboxes }) {
         const [query, setQuery] = useState('');
         const [searched, setSearched] = useState(null);
         const [open, setOpen] = useState(false);
@@ -256,7 +260,9 @@
                   h('p', { 'data-automation-id': 'promptOption', 'data-automation-label': v }, v)))))),
           results.length > 0 && h('div', { className: 'popup', role: 'listbox' },
             results.map((o) => h('div', { key: o, role: 'option', 'data-automation-id': 'menuItem',
-                                          onClick: () => { if (shownTerm) add(o); } },
+                                          onClick: () => { if (shownTerm && !checkboxes) add(o); } },
+              checkboxes && h('input', { type: 'checkbox', checked: values.includes(o),
+                                         onChange: () => { if (shownTerm) add(o); } }),
               h('div', { 'data-automation-id': 'promptLeafNode' },
                 h('p', { 'data-automation-id': 'promptOption', 'data-automation-label': o }, o))))));
       }
@@ -384,7 +390,8 @@
             h('div', { role: 'group', 'aria-labelledby': 'Skills-section' },
               h('h4', { id: 'Skills-section' }, 'Skills'),
               h(Prompt, { auto: 'skills', fkit: 'skills--skills', label: 'Type to Add Skills', values: skills,
-                          catalogue: SKILLS, searchOn: 'enter', multi: true, onChange: setSkills })),
+                          catalogue: SKILLS, searchOn: 'enter', multi: true, checkboxes: true,
+                          onChange: setSkills })),
 
             h(Section, {
               name: 'Websites', title: 'Websites', items: sites, setItems: setSites,
@@ -598,15 +605,19 @@
         /* ---- Skills: catalogue prompt that searches on Enter ---- */
         msg = await press('skills');
         check('skills: added beside the suggested one, never removing it', S().skills,
-          ['Teamwork (Suggested)', 'Java (Programming Language)', 'Python (Programming Language)', 'Widget Design']);
+          ['Teamwork (Suggested)', 'Java (Programming Language)', 'Python (Programming Language)', 'Widget Design', 'C#']);
         check('"Java" did not become JavaScript', S().skills.includes('JavaScript'), false);
+        check('rows with a checkbox are selected through it (the row click alone does nothing here)',
+          S().skills.length, 5);
+        check('"C#" is C#, not "C" or "Visual C#"',
+          [S().skills.includes('C'), S().skills.includes('Visual C#')], [false, false]);
         check('an unlisted skill is reported, not approximated', /Kubernetes — /.test(msg), true);
         check('no popup left open', openPopups().length, 0);
         check('no stray query left in the search box',
           document.querySelector('[data-automation-id="formField-skills"] input').value, '');
 
         msg = await press('skills');
-        check('skills, pressed again: no duplicates', S().skills.length, 4);
+        check('skills, pressed again: no duplicates', S().skills.length, 5);
 
         /* Enter that commits the wrong row on its own — removed at once. */
         window.__setSkills(['Teamwork (Suggested)']);
