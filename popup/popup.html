@@ -88,6 +88,63 @@
 
         <div class="divider" id="credListLabel">Saved</div>
         <div id="credList" class="list"></div>
+
+        <div class="divider">Verify email</div>
+        <p class="fine">
+          After you create an account, Workday emails an activation link and the
+          page only says "an email has been sent to you". This finds that email in
+          Gmail and <b>shows</b> you the link. It never opens it — a URL that
+          arrived by email is someone else's input, so the click stays yours.
+        </p>
+
+        <!-- Shown until an OAuth client ID is pasted into manifest.json. -->
+        <div class="card" id="gmailSetup" hidden>
+          <h2>Not set up yet</h2>
+          <p>
+            This needs a Google OAuth client ID of your own. It is bound to this
+            extension's ID, so one cannot be shipped in the repo.
+          </p>
+          <ol class="fine steps">
+            <li>Google Cloud console → new project → enable the <b>Gmail API</b>.</li>
+            <li>OAuth consent screen → <b>External</b> → add your own address as a test user.</li>
+            <li>Credentials → OAuth client ID → application type <b>Chrome Extension</b>, and give it the ID below.</li>
+            <li>Paste the client ID into <code>oauth2.client_id</code> in <b>manifest.json</b> and reload the extension.</li>
+          </ol>
+          <p class="fine">This extension's ID: <b id="gmailExtId"></b></p>
+          <p class="fine">
+            Full steps, including how to pin the ID so it stops changing on every
+            reload, are in the README.
+          </p>
+        </div>
+
+        <div id="gmailReady" class="stack" hidden>
+          <div class="list">
+            <div class="item">
+              <div class="who">
+                <span class="scope" id="gmailScope">Gmail not connected</span>
+                <span class="email" id="gmailEmail">Read-only, only to find this one link</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="row-actions">
+            <button class="ghost" id="gmailConnectBtn">Connect Gmail</button>
+            <button class="ghost" id="gmailDisconnectBtn" hidden>Disconnect</button>
+          </div>
+
+          <button class="primary" id="gmailFindBtn" hidden>Find the verification link</button>
+          <p class="fine" id="gmailNote" hidden></p>
+
+          <div class="card" id="gmailResult" hidden>
+            <h2 id="gmailResultTitle">Activation link</h2>
+            <p class="urlbox" id="gmailUrl"></p>
+            <p class="fine" id="gmailMeta"></p>
+            <div class="row-actions">
+              <button class="ghost" id="gmailCopyBtn">Copy</button>
+              <button class="ghost" id="gmailOpenBtn">Open</button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- ---- profile ---- -->

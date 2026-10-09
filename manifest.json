@@ -4,9 +4,17 @@
   "version": "0.1.0",
   "description": "One-click autofill + submit for Workday account creation and application forms.",
 
-  "permissions": ["storage"],
+  "permissions": ["storage", "identity"],
 
-  "host_permissions": ["https://*.myworkdayjobs.com/*"],
+  "host_permissions": [
+    "https://*.myworkdayjobs.com/*",
+    "https://gmail.googleapis.com/*"
+  ],
+
+  "oauth2": {
+    "client_id": "REPLACE_ME.apps.googleusercontent.com",
+    "scopes": ["https://www.googleapis.com/auth/gmail.readonly"]
+  },
 
   "icons": {
     "16": "icons/icon16.png",
