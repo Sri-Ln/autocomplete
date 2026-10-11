@@ -144,6 +144,21 @@ check('unrankable: one stray label spoils the scale',
   X.chooseLevel(['Beginner', 'Intermediate', 'Grade 7'], 'beginner').ok, false);
 check('unrankable: numbers that contradict the words',
   X.chooseLevel(['1 - Fluent', '2 - Beginner'], 'fluent').ok, false);
+const LOW_HIGH = ['Select One', '1 - Low', '2 - Medium', '3 - High'];
+check('low/medium/high: beginner → Low', pick(LOW_HIGH, 'beginner'), '1 - Low');
+check('low/medium/high: intermediate → Medium', pick(LOW_HIGH, 'intermediate'), '2 - Medium');
+check('low/medium/high: advanced → High', pick(LOW_HIGH, 'advanced'), '3 - High');
+check('low/medium/high: fluent → High', pick(LOW_HIGH, 'fluent'), '3 - High');
+check('low/medium/high, unnumbered', pick(['Low', 'Medium', 'High'], 'intermediate'), 'Medium');
+
+// Words we have never seen, but the tenant numbered them: the numbers are the order.
+const NUM_ONLY = ['Select One', '1 - Alpha', '2 - Beta', '3 - Gamma', '4 - Delta'];
+check('numbered, unknown words: beginner → the lowest number', pick(NUM_ONLY, 'beginner'), '1 - Alpha');
+check('numbered, unknown words: intermediate → second of four', pick(NUM_ONLY, 'intermediate'), '2 - Beta');
+check('numbered, unknown words: advanced → third of four', pick(NUM_ONLY, 'advanced'), '3 - Gamma');
+check('numbered, unknown words: fluent → the highest number', pick(NUM_ONLY, 'fluent'), '4 - Delta');
+check('a bare number list is a scale too', pick(['1', '2', '3', '4', '5'], 'fluent'), '5');
+
 check('a single option is not a scale', X.chooseLevel(['Fluent'], 'fluent').ok, false);
 check('no level set → nothing chosen', X.chooseLevel(SIMPLE, '').ok, false);
 check('beginner on a scale that starts at Advanced is left',
@@ -185,6 +200,80 @@ check('an empty education slot is not an entry', X.hasEducation({ school: '', de
 check('a ladder alone makes it one', X.hasEducation({ school: '', degree: ['Some Degree'] }), true);
 check('school names compare loosely', X.sameSchool('Example State University', 'example state university'), true);
 check('different schools do not', X.sameSchool('Example State University', 'Sample Tech Institute'), false);
+
+/* ---------------- learning from the page at Submit ---------------- */
+
+const base = () => ({
+  firstName: 'Testy',
+  education: [
+    { school: 'Sample Tech Institute', degree: ["Master's Degree"], fieldOfStudy: ['Widgetry'], gpa: '3.9', from: '', to: '' },
+    { school: 'Example State University', degree: ["Bachelor's Degree"], fieldOfStudy: ['Gadgetry'], gpa: '', from: '', to: '' },
+  ],
+  skills: ['Java', 'Python', 'C'],
+});
+const eduPage = (entries, skills = []) => ({ education: entries, skills });
+
+let L = X.learnFromPage(base(), eduPage([
+  { school: 'Sample Tech Institute', degree: 'Master of Widget Science (M.W.S.)', fieldOfStudy: ['Applied Widget Engineering'] },
+]));
+check('learn: an uncovered degree goes to the bottom of that education\'s ladder',
+  L.profile.education[0].degree, ["Master's Degree", 'Master of Widget Science (M.W.S.)']);
+check('learn: an uncovered field of study too', L.profile.education[0].fieldOfStudy, ['Widgetry', 'Applied Widget Engineering']);
+check('learn: the other education is untouched', L.profile.education[1], base().education[1]);
+check('learn: says what it saved, by page entry',
+  L.saved, ['Education 1 degree "Master of Widget Science (M.W.S.)"', 'Education 1 field of study "Applied Widget Engineering"']);
+check('learn: the rest of the profile rides along', [L.profile.firstName, L.profile.education[0].gpa], ['Testy', '3.9']);
+check('learn: the input profile is not mutated', base().education[0].degree, ["Master's Degree"]);
+
+L = X.learnFromPage(base(), eduPage([
+  { school: 'Sample Tech Institute', degree: "Master's Degree (±18 years)", fieldOfStudy: ['Widgetry'] },
+]));
+check('learn: a value the ladder already picks is not added again', [L.saved, L.profile.education[0].degree], [[], ["Master's Degree"]]);
+
+L = X.learnFromPage(base(), eduPage([
+  { school: 'Example State University', degree: 'Bachelor of Gadgets', fieldOfStudy: [] },
+  { school: 'Sample Tech Institute', degree: 'Master of Widget Science', fieldOfStudy: [] },
+]));
+check('learn: entries pair with educations by school, whatever their order',
+  [L.profile.education[0].degree.at(-1), L.profile.education[1].degree.at(-1)],
+  ['Master of Widget Science', 'Bachelor of Gadgets']);
+check('learn: labels name the page\'s entry', L.saved,
+  ['Education 1 degree "Bachelor of Gadgets"', 'Education 2 degree "Master of Widget Science"']);
+
+L = X.learnFromPage(base(), eduPage([
+  { school: '', degree: 'Master of Widget Science', fieldOfStudy: [] },
+  { school: 'Unknown College', degree: 'Bachelor of Gadgets', fieldOfStudy: [] },
+]));
+check('learn: unmatched entries pair top to bottom',
+  [L.profile.education[0].degree.at(-1), L.profile.education[1].degree.at(-1)],
+  ['Master of Widget Science', 'Bachelor of Gadgets']);
+
+L = X.learnFromPage(base(), eduPage([{ school: '', degree: 'Select One', fieldOfStudy: [] }]));
+check('learn: a placeholder is not a degree', L.saved, []);
+
+const full = base();
+full.education[0].degree = ['D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8'];
+L = X.learnFromPage(full, eduPage([{ school: 'Sample Tech Institute', degree: 'Master of Widget Science', fieldOfStudy: [] }]));
+check('learn: a full ladder is left alone and reported',
+  [L.profile.education[0].degree.length, L.saved, L.full], [8, [], ['Education 1 degree "Master of Widget Science"']]);
+
+L = X.learnFromPage(base(), eduPage([], ['Teamwork (Suggested)', 'Java (Programming Language)', 'React', 'C#', 'react']));
+check('learn: skills are not saved unless asked', [L.saved, L.profile.skills], [[], ['Java', 'Python', 'C']]);
+
+L = X.learnFromPage(base(), eduPage([], ['Teamwork (Suggested)', 'Java (Programming Language)', 'React', 'C#', 'react']), { skills: true });
+check('learn: asked, every new skill on the page is saved — "(Suggested)" dropped, no repeats',
+  L.profile.skills, ['Java', 'Python', 'C', 'Teamwork', 'React', 'C#']);
+check('learn: "Java (Programming Language)" is the Java already saved; "C#" is not "C"',
+  L.saved, ['skills: Teamwork, React, C#']);
+
+const oneEdu = base();
+oneEdu.education[1] = { school: '', degree: [], fieldOfStudy: [], gpa: '', from: '', to: '' };
+L = X.learnFromPage(oneEdu, eduPage([
+  { school: 'Other Place', degree: 'Associate of Things', fieldOfStudy: [] },
+  { school: 'Sample Tech Institute', degree: 'Master of Widget Science', fieldOfStudy: [] },
+]));
+check('learn: a saved education is paired before an empty slot',
+  [L.profile.education[0].degree.at(-1), L.profile.education[1].degree], ['Master of Widget Science', ['Associate of Things']]);
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

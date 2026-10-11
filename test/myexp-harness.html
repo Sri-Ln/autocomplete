@@ -117,6 +117,7 @@
             switch (msg?.type) {
               case 'status': return { configured: true, unlocked: false, settings: { autoSubmit: true, showWidget: true } };
               case 'getProfile': return { ok: true, profile: window.PROFILE };
+              case 'saveProfile': window.PROFILE = msg.profile; return { ok: true };
               default: return { ok: true };
             }
           },
@@ -215,7 +216,10 @@
       /* `checkboxes`: as the live Skills list does, each result carries a
          checkbox, and only ticking the box selects it — a click on the row
          itself does nothing. */
-      function Prompt({ auto, fkit, label, values, onChange, catalogue, searchOn, multi, browse, delay = 0, onQuery, checkboxes }) {
+      /* `checkboxes` / `radios`: each result row carries that input, and only
+         the input selects — a click on the row's text does nothing, as on the
+         live tenants (Skills: checkboxes; one tenant's Field of Study: radios). */
+      function Prompt({ auto, fkit, label, values, onChange, catalogue, searchOn, multi, browse, delay = 0, onQuery, checkboxes, radios }) {
         const [query, setQuery] = useState('');
         const [searched, setSearched] = useState(null);
         const [open, setOpen] = useState(false);
@@ -263,9 +267,11 @@
                   h('p', { 'data-automation-id': 'promptOption', 'data-automation-label': v }, v)))))),
           results.length > 0 && h('div', { className: 'popup', role: 'listbox' },
             results.map((o) => h('div', { key: o, role: 'option', 'data-automation-id': 'menuItem',
-                                          onClick: () => { if (shownTerm && !checkboxes) add(o); } },
+                                          onClick: () => { if (shownTerm && !checkboxes && !radios) add(o); } },
               checkboxes && h('input', { type: 'checkbox', checked: values.includes(o),
                                          onChange: () => { if (shownTerm) add(o); } }),
+              radios && h('input', { type: 'radio', name: `${fkit}-results`, checked: values.includes(o),
+                                     onChange: () => { if (shownTerm) add(o); } }),
               h('div', { 'data-automation-id': 'promptLeafNode' },
                 h('p', { 'data-automation-id': 'promptOption', 'data-automation-label': o }, o))))));
       }
@@ -371,6 +377,7 @@
                             browse: ['Accounting', 'Actuarial Science', 'Advertising',
                                      'Astro Gardening Technology', 'Business'], delay: 350,
                             onQuery: (q) => window.__fosQueries.push(q),
+                            radios: eduLayout === 'prompt',
                             onChange: (v) => set({ fieldOfStudy: v }) }),
                 h(Text, { key: 'g', auto: 'gradeAverage', fkit: `education-${i}--gradeAverage`, label: 'Overall Result (GPA)',
                           value: e.gpa, onChange: (v) => set({ gpa: v }) }),
@@ -522,8 +529,8 @@
           ['Fill all', true]);
         check('and no Fill / Submit main action', mainAction(), null);
         check('the page has no submit selector for a fill to click', 'submit' in AF.sites.workday.pages.myExperience, false);
-        check('a Submit button sits under the section buttons',
-          [!!submitBtn(), submitBtn()?.previousElementSibling?.id], [true, 'sections']);
+        check('a Submit button sits under the section buttons, the save-skills box between them',
+          [!!submitBtn(), submitBtn()?.previousElementSibling?.id, submitBtn()?.previousElementSibling?.previousElementSibling?.id], [true, 'saveSkillsRow', 'sections']);
         check('the vault is locked, and the buttons work anyway (profile only)',
           secButtons().every((b) => !b.disabled), true);
 
@@ -718,6 +725,42 @@
         msg = await press('education');
         check('a half-filled Education 1 is filled in place, not skipped for the blank one',
           S().edu.map((e) => e.school), ['Sample Tech Institute', 'Example State University']);
+
+        /* ---- Submit saves what the page holds that the profile does not ----
+           Education 2 gets a degree and field the profile's ladders do not
+           pick, chosen by hand; Skills holds a recommended skill and one the
+           user added. */
+        const saveBox = () => shadow()?.getElementById('saveSkills');
+        check('a "save skills" checkbox sits with the section buttons, unticked', [!!saveBox(), saveBox()?.checked], [true, false]);
+        const boxStyle = saveBox() && getComputedStyle(saveBox());
+        check('and it looks like a checkbox: small, not a full-width text box',
+          [parseFloat(boxStyle?.width) < 30, boxStyle?.appearance !== 'none'], [true, true]);
+        window.__setEdu((xs) => xs.map((x, i) => (i === 1 ? { ...x, degree: 'Doctorate (±21 years)', fieldOfStudy: ['Underwater Basketry'] } : x)));
+        window.__setSkills(['Teamwork (Suggested)', 'Gadgetry', 'Java (Programming Language)']);
+        await sleep(150);
+        const skillsBefore = [...window.PROFILE.skills];
+        const clicksBefore = window.__nextClicks;
+        submitBtn().dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true }));
+        await waitUntil(() => window.__nextClicks > clicksBefore, 5000, 'Next after the save');
+        await sleep(200);
+        check('Submit: the hand-picked degree goes to the bottom of Education 2 ladder',
+          window.PROFILE.education[1].degree, ["Bachelor's Degree", 'Doctorate (±21 years)']);
+        check('Submit: and the field of study', window.PROFILE.education[1].fieldOfStudy, ['Widgetry', 'Underwater Basketry']);
+        check('Submit: Education 1 already matched, so its ladders are unchanged',
+          window.PROFILE.education[0].degree, ['Master of Widgetry', "Master's Degree"]);
+        check('Submit, box unticked: no skills saved', window.PROFILE.skills, skillsBefore);
+        check('Submit: says what it saved', /Saved to profile: .*Doctorate/.test(widgetMsg()), true);
+
+        saveBox().click();
+        await sleep(50);
+        check('the box ticks', saveBox().checked, true);
+        submitBtn().dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true }));
+        await waitUntil(() => window.__nextClicks > clicksBefore + 1, 5000, 'Next after the second save');
+        await sleep(200);
+        check('Submit, box ticked: new skills saved — the recommended one kept, nothing doubled',
+          window.PROFILE.skills, [...skillsBefore, 'Gadgetry']);
+        check('and the page recommended skill stays on the page', S().skills.includes('Teamwork (Suggested)'), true);
+        check('Submit, again: nothing new for the ladders', window.PROFILE.education[1].degree.length, 2);
 
         lines.push(`  --   whole run took ${Math.round(performance.now() - t0)} ms`);
       }

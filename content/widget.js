@@ -20,7 +20,7 @@ AF.widget = (() => {
   let host = null;
   let root = null;
   let els = {};
-  let handlers = {}; // { onAction, onSection, onSectionSubmit }
+  let handlers = {}; // { onAction, onSection, onSectionSubmit, onSaveSkills }
   let collapsed = false;
 
   /** {left, top} once the user has moved the widget; null while it still sits
@@ -124,7 +124,9 @@ AF.widget = (() => {
     button.primary:active:not(:disabled) { transform: translateY(1px); }
     button.primary:disabled { background: #34343f; color: #6c6c7e; cursor: default; }
 
-    input {
+    /* The passphrase box. Not the save-skills checkbox: "all: unset" takes a
+       checkbox's tick away and the width makes it a full-width bar. */
+    input:not([type="checkbox"]) {
       all: unset;
       box-sizing: border-box;            /* see note above */
       display: block; width: 100%;
@@ -133,7 +135,7 @@ AF.widget = (() => {
       font-size: 13px;
     }
     input::placeholder { color: #55556a; }
-    input:focus { border-color: #7c5cff; box-shadow: 0 0 0 3px rgba(124,92,255,.15); }
+    input:not([type="checkbox"]):focus { border-color: #7c5cff; box-shadow: 0 0 0 3px rgba(124,92,255,.15); }
 
     .msg {
       font-size: 11.5px; line-height: 1.5;
@@ -191,6 +193,9 @@ AF.widget = (() => {
     .sections .ghost:disabled { opacity: .45; cursor: default; }
     .sections .ghost.running { border-color: #7c5cff; color: #c9bcff; }
     #secSubmit { margin-top: 8px; width: 100%; }
+    .save-skills { display: flex; align-items: center; gap: 6px; margin-top: 8px;
+                   font-size: 11.5px; color: #b9b9c9; cursor: pointer; user-select: none; }
+    .save-skills input { margin: 0; width: 14px; height: 14px; accent-color: #7c5cff; cursor: pointer; }
     .sec-mark { font-size: 11px; line-height: 1; }
     .sec-mark.ok   { color: #46c17f; }
     .sec-mark.warn { color: #f0a83c; }
@@ -247,6 +252,10 @@ AF.widget = (() => {
 
         <!-- One button per section, on pages that work section by section. -->
         <div class="sections hidden" id="sections"></div>
+        <!-- With the Skills button: on Submit, also save the page's skills to the profile. -->
+        <label class="save-skills hidden" id="saveSkillsRow">
+          <input type="checkbox" id="saveSkills" /> Save skills to profile on Submit
+        </label>
         <!-- Below the section buttons: clicks the page's own Next, on request only. -->
         <button class="primary hidden" id="secSubmit" type="button">Submit</button>
 
@@ -327,6 +336,8 @@ AF.widget = (() => {
       bubble: root.getElementById('bubble'),
       sections: root.getElementById('sections'),
       secSubmit: root.getElementById('secSubmit'),
+      saveSkillsRow: root.getElementById('saveSkillsRow'),
+      saveSkills: root.getElementById('saveSkills'),
     };
 
     els.action.addEventListener('click', () => handlers.onAction?.(els.pass.value));
@@ -334,6 +345,7 @@ AF.widget = (() => {
       if (e.key === 'Enter') handlers.onAction?.(els.pass.value);
     });
     els.linkCopy.addEventListener('click', copyLink);
+    els.saveSkills.addEventListener('change', () => handlers.onSaveSkills?.(els.saveSkills.checked));
     els.secSubmit.addEventListener('click', () => {
       if (!els.secSubmit.disabled) handlers.onSectionSubmit?.();
     });
@@ -728,6 +740,8 @@ AF.widget = (() => {
    *                 → one button per section (My Experience). state is
    *                   'ok' | 'warn' | 'err' | null — the last run's outcome
    *   s.sectionSubmit { label, disabled? } or null → the Submit under them
+   *   s.saveSkills  { checked, disabled? } or null → the "save skills on
+   *                   Submit" checkbox under the section buttons
    */
   function render(s) {
     if (!host) return;
@@ -754,6 +768,11 @@ AF.widget = (() => {
     if (s.sectionSubmit) {
       els.secSubmit.textContent = s.sectionSubmit.label ?? 'Submit';
       els.secSubmit.disabled = !!s.sectionSubmit.disabled;
+    }
+    els.saveSkillsRow.classList.toggle('hidden', !s.saveSkills);
+    if (s.saveSkills) {
+      els.saveSkills.checked = !!s.saveSkills.checked;
+      els.saveSkills.disabled = !!s.saveSkills.disabled;
     }
 
     if (s.message) {

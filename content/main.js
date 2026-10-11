@@ -34,6 +34,9 @@
   let sectionRunning = null;
   let sectionState = {};
   let sectionsShown = '';
+  /* The widget's "Save skills to profile on Submit" box. Unticked on every new
+   * page, so saving a page's skills is always that application's choice. */
+  let saveSkillsOnSubmit = false;
 
   /**
    * How long to wait for the service worker before giving up on a message.
@@ -98,8 +101,9 @@
    * stored in plain text and needs no key, so the pill works while the
    * extension is still locked. There is no password anywhere near this path.
    *
-   * The popup broadcasts `profileChanged` on save, which clears the cache; that
-   * is the only way this can go stale, since nothing else writes the profile.
+   * The popup broadcasts `profileChanged` on save, which clears the cache. The
+   * only other writer is My Experience's Submit (learnFromPage), which clears
+   * it itself.
    */
   let profileCache = null;
 
@@ -327,6 +331,36 @@
     }
   }
 
+  /**
+   * Before Submit's click: save what the page holds that the profile does not
+   * — a degree or field of study the user picked by hand, and, with the box
+   * ticked, the page's skills. Never blocks the click: a failure is reported
+   * and Submit goes ahead. → { kind, text } for the message after "Submitted."
+   */
+  async function learnFromPage() {
+    if (!ctx.page?.readLearnable) return { kind: 'ok', text: '' };
+    try {
+      const res = await send({ type: 'getProfile' });
+      if (!res?.ok) throw new Error('could not load your profile');
+      const { profile: next, saved, full } = AF.experience.learnFromPage(
+        res.profile, ctx.page.readLearnable(), { skills: saveSkillsOnSubmit }
+      );
+      if (saved.length) {
+        const ok = await send({ type: 'saveProfile', profile: next });
+        if (!ok?.ok) throw new Error(ok?.error ?? 'the save was refused');
+        profileCache = null;
+      }
+      AF.log('learned at Submit', { saved, full });
+      const parts = [];
+      if (saved.length) parts.push(` Saved to profile: ${saved.join('; ')}.`);
+      if (full.length) parts.push(` Not saved, list full (8): ${full.join('; ')}.`);
+      return { kind: full.length ? 'warn' : 'ok', text: parts.join('') };
+    } catch (err) {
+      AF.log('learning at Submit failed', err);
+      return { kind: 'warn', text: ` Could not save to your profile: ${err?.message ?? err}.` };
+    }
+  }
+
   /** The Submit under the section buttons: settle the page, then click Next once. */
   async function onSectionSubmit() {
     const sel = ctx.page?.manualSubmit;
@@ -343,8 +377,9 @@
       if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') {
         return say('warn', 'Next is disabled — Workday wants something fixed on the page first.');
       }
+      const saved = await learnFromPage();
       btn.click();
-      say('ok', 'Submitted. If Workday flags anything, fix it and press Submit again.');
+      say(saved.kind, `Submitted.${saved.text} If Workday flags anything, fix it and press Submit again.`);
     } finally {
       busy = false;
       paint();
@@ -712,6 +747,9 @@
         sections: sectionButtons(),
         sectionSubmit: ctx.page.manualSubmit
           ? { label: busy ? 'Submitting…' : 'Submit', disabled: busy || !!sectionRunning }
+          : null,
+        saveSkills: ctx.page.manualSubmit && presentSections().includes('skills')
+          ? { checked: saveSkillsOnSubmit, disabled: busy }
           : null,
         message: lastMessage ?? {
           kind: 'info',
@@ -1141,6 +1179,7 @@
       lastRun = null;
       lastMessage = null;
       sectionState = {};
+      saveSkillsOnSubmit = false;
     }
 
     ctx = next;
@@ -1164,7 +1203,10 @@
       if (verifyScreen) await loadGmailStatus();
     }
 
-    if (!AF.widget.isMounted()) AF.widget.mount({ onAction, onSection, onSectionSubmit });
+    if (!AF.widget.isMounted()) AF.widget.mount({
+      onAction, onSection, onSectionSubmit,
+      onSaveSkills: (checked) => { saveSkillsOnSubmit = !!checked; },
+    });
     paint();
   }
 

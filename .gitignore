@@ -39,6 +39,8 @@ desktop.ini
 /Page_files/
 /voluntary.html
 /voluntary_files/
+# The popup's Export: a copy of the profile.
+/backup/
 
 # ── Claude Code local state ──────────────────────────────────────────
 /.claude/
