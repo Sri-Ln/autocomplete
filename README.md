@@ -19,6 +19,14 @@ reused before Add is clicked, and a pre-filled value that differs is replaced
 (skills are only ever added). Under them, **Submit** clicks the page's Next;
 it does not require any section to have been filled first. Degree and Field of study are *ladders* (acceptable answers, best
 first); language levels are semantic and mapped onto each tenant's own scale.
+
+Submit also saves what the page holds that the profile does not. A degree or
+field of study the ladder would not pick, usually one you chose by hand because
+this company words it differently, goes to the bottom of that education's ladder.
+That ladder holds at most 8 entries. With **Save skills to profile on Submit**
+ticked, every skill on the page that isn't already in your profile is saved too,
+including recommended ones, minus Workday's "(Suggested)" tag. The box starts
+unticked on every page.
 See `sites/workday-experience.js` and `content/experience.js`.
 
 All three fill. My Information covers the text fields plus the four widgets the

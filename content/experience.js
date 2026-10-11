@@ -235,6 +235,8 @@ AF.experience = (() => {
     ['moderate', 2],
     ['classroom', 1.5], ['limited', 1.5], ['elementary', 1], ['beginner', 1], ['basic', 1],
     ['novice', 1], ['none', 0], ['no proficiency', 0],
+    // "1 - Low / 2 - Medium / 3 - High": High sits above advanced, below fluent.
+    ['high', 3.5], ['medium', 2], ['low', 1],
   ];
 
   /** "Select One" and friends — rows on the list that are not a level. */
@@ -281,11 +283,21 @@ AF.experience = (() => {
     if (rows.length < 2) return { ok: false, reason: 'not a scale — fewer than two levels' };
 
     const unknown = rows.filter((r) => r.words === null);
+    const numbered = rows.every((r) => r.ordinal !== null);
+
+    /* Words we cannot place, but every row numbered: the tenant has told us
+     * the order, so the numbers alone rank it, spread evenly over the ruler —
+     * lowest number 1 (barely), highest 4.5 (native). Unnumbered and unknown
+     * stays a scale we do not guess at. */
+    if (unknown.length && numbered) {
+      const byNum = [...rows].sort((a, b) => a.ordinal - b.ordinal);
+      const step = 3.5 / (byNum.length - 1);
+      return { ok: true, ranked: byNum.map((r, i) => ({ index: r.index, text: r.text, rank: 1 + i * step })) };
+    }
     if (unknown.length) {
       return { ok: false, reason: `cannot place "${unknown[0].text}" on a proficiency scale` };
     }
 
-    const numbered = rows.every((r) => r.ordinal !== null);
     if (numbered) {
       const byNum = [...rows].sort((a, b) => a.ordinal - b.ordinal);
       for (let i = 1; i < byNum.length; i++) {
@@ -437,6 +449,90 @@ AF.experience = (() => {
   /** Same language? "English" and "English (US)" are; "English" and "Bengali" never. */
   const sameLanguage = (a, b) => promptScore(a, b) >= EXACT || promptScore(b, a) >= EXACT;
 
+  /* ------------------------------------------------------------------ */
+  /* learning from the page at Submit                                    */
+  /* ------------------------------------------------------------------ */
+
+  /** Rungs a ladder may hold — background/storage.js's MAX_LADDER. */
+  const LADDER_MAX = 8;
+
+  /** "Teamwork (Suggested)" → "Teamwork": the résumé parse's tag, not the skill. */
+  const skillName = (s) => String(s ?? '').replace(/\s*\(suggested\)\s*$/i, '').trim();
+
+  /** Same skill? As skillMatch on the page: "C#" is never "C", so symbols compare as written. */
+  function sameSkill(a, b) {
+    const raw = (t) => String(t).replace(/\([^)]*\)/g, ' ').trim().toLowerCase().replace(/\s+/g, ' ');
+    if (/[^a-z0-9\s()]/i.test(`${a}${b}`)) return raw(a) === raw(b);
+    return promptScore(a, b) >= EXACT || promptScore(b, a) >= EXACT;
+  }
+
+  /**
+   * What the page holds that the profile does not, merged in — at Submit.
+   *
+   *   page  { education: [{ school, degree, fieldOfStudy: [] }], skills: [] }
+   *         as the user leaves it, in page order
+   *
+   * → { profile, saved: [label], full: [label] }   the input is not mutated
+   *
+   * A degree or field of study goes at the BOTTOM of its education's ladder,
+   * and only when the ladder would not already pick it: a tenant's unique
+   * wording is still tried after every rung the user put there. Page entries
+   * pair with saved educations the way fillEducation pairs them — by school,
+   * then top to bottom, saved educations before empty slots. Skills are saved
+   * only when asked, every one on the page that is not already there.
+   */
+  function learnFromPage(profile, page, { skills: withSkills = false } = {}) {
+    const out = { ...profile, education: (profile?.education ?? []).map((e) => ({ ...e })) };
+    const saved = [];
+    const full = [];
+
+    const slots = out.education.map((_, i) => i);
+    slots.sort((a, b) => hasEducation(out.education[b]) - hasEducation(out.education[a]));
+    const entries = page?.education ?? [];
+    const slotOf = entries.map(() => null);
+    const used = new Set();
+    entries.forEach((p, i) => {
+      const k = slots.find((s) => !used.has(s) && sameSchool(p.school, out.education[s].school));
+      if (k !== undefined) { slotOf[i] = k; used.add(k); }
+    });
+    entries.forEach((p, i) => {
+      if (slotOf[i] !== null) return;
+      const k = slots.find((s) => !used.has(s));
+      if (k !== undefined) { slotOf[i] = k; used.add(k); }
+    });
+
+    entries.forEach((p, i) => {
+      const edu = out.education[slotOf[i]];
+      if (!edu) return;
+      const add = (key, kindLabel, value) => {
+        const text = String(value ?? '').trim();
+        if (PLACEHOLDER.test(AF.normalizeText(text))) return;
+        const ladder = toLadder(edu[key]);
+        if (onLadder(text, ladder)) return;
+        const label = `Education ${i + 1} ${kindLabel} "${text}"`;
+        if (ladder.length >= LADDER_MAX) return full.push(label);
+        edu[key] = [...ladder, text];
+        saved.push(label);
+      };
+      add('degree', 'degree', p.degree);
+      for (const f of p.fieldOfStudy ?? []) add('fieldOfStudy', 'field of study', f);
+    });
+
+    if (withSkills) {
+      const list = [...(out.skills ?? [])];
+      const added = [];
+      for (const pill of page?.skills ?? []) {
+        const name = skillName(pill);
+        if (!name || list.some((s) => sameSkill(s, name))) continue;
+        list.push(name);
+        added.push(name);
+      }
+      out.skills = list;
+      if (added.length) saved.push(`skills: ${added.join(', ')}`);
+    }
+    return { profile: out, saved, full };
+  }
+
   return {
     parseMonthYear,
     baseText,
@@ -460,5 +556,6 @@ AF.experience = (() => {
     hasEducation,
     sameSchool,
     sameLanguage,
+    learnFromPage,
   };
 })();

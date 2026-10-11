@@ -450,11 +450,13 @@
       return { ok: false, reason: texts.length ? `nothing matching "${query}"` : `no results for "${query}"`, texts };
     }
 
-    /* Rows with a checkbox (Skills) select through the checkbox: a click on
-     * the row itself was seen live to do nothing, while the same row's box
-     * ticks it. Rows without one are clicked as before. */
+    /* Rows with a checkbox (Skills) or a radio (Field of Study on some
+     * tenants, 2026-10-11) select through that input: a click on the row
+     * itself was seen live to do nothing, while the row's own input selects
+     * it. Left unhandled, every rung "matched" and nothing was chosen, so the
+     * ladder cycled through all of them. Rows without one are clicked as before. */
     const row = rows[hit.index];
-    const box = row?.querySelector('input[type="checkbox"]');
+    const box = row?.querySelector('input[type="checkbox"], input[type="radio"]');
     if (!W.clickRow(box?.isConnected ? box : row)) {
       await W.closePopup();
       return { ok: false, reason: 'the option list moved under us', texts };
@@ -474,7 +476,7 @@
       // What the click hit and what the field holds now, to see why it did not take.
       AF.log(`clicked "${hit.text}" but no new pill — row <${row?.tagName?.toLowerCase()}` +
         ` role=${row?.getAttribute('role')} id=${row?.getAttribute('data-automation-id')}` +
-        `${row?.querySelector('input[type="checkbox"]') ? ' has-checkbox' : ''}>` +
+        `${box ? ` has-${box.type}` : ''}>` +
         ` · pills before: ${pillsBefore.join(' | ') || 'none'} · after: ${pills(wrap).join(' | ') || 'none'}`);
     }
     clearQuery(promptInput(wrap));
@@ -1137,6 +1139,23 @@
 
       const kind = report.failed.length ? 'err' : todo.length ? 'warn' : 'ok';
       return { kind, text };
+    },
+
+    /**
+     * What the page holds as the user leaves it, for X.learnFromPage at Submit:
+     * each education entry's school, degree and field-of-study pills, in page
+     * order, and every skill pill. Read only — nothing is opened or clicked.
+     */
+    readLearnable() {
+      const education = entryIds(sectionRoot('Education'), 'Education').map((id) => {
+        const e = entry(id);
+        return {
+          school: schoolOf(id),
+          degree: shown(field(e, 'degree')),
+          fieldOfStudy: pills(field(e, 'fieldOfStudy')),
+        };
+      });
+      return { education, skills: pills(skillsField()) };
     },
   };
 
