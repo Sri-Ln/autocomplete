@@ -31,3 +31,14 @@ package-lock.json
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# ── Saved live pages ─────────────────────────────────────────────────
+# "Save page as" snapshots of real application pages, used to harvest
+# selectors. They carry the applicant's own details: never committed.
+/Page.html
+/Page_files/
+/voluntary.html
+/voluntary_files/
+
+# ── Claude Code local state ──────────────────────────────────────────
+/.claude/

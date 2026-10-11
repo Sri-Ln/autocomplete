@@ -149,6 +149,9 @@
       const SKILLS = ['JavaScript', 'Java (Programming Language)', 'Java Spring',
         'Python (Programming Language)', 'Teamwork', 'Widget Design', 'Gadgetry',
         'C', 'Visual C#', 'C#', 'Turbo C'];
+      /* Schools, for the tenant whose School is a catalogue prompt, not a text box. */
+      const SCHOOLS = ['Sample Tech Institute', 'Sample Tech Institute of Arts', 'Example State University',
+        'Example State University Online', 'School Not Found'];
       const LANGS = ['Select One', 'Esperanto', 'Interlingua', 'Klingon', 'Volapük'];
       const NUMBERED = ['Select One', '1 - Beginner', '2 - Classroom Study', '3 - Intermediate',
         '4 - Advanced', '5 - Fluent'];
@@ -322,6 +325,9 @@
           key: key(), school: 'Example State University', degree: "Bachelor's Degree (±16 years)",
           fieldOfStudy: ['Widgetry'], gpa: '3.4', from: { year: 2015 }, to: { year: 2019 },
         }]);
+        /* 'text': School is a text box and there are year fields (the saved page).
+           'prompt': School is a catalogue prompt and there are no dates (another tenant). */
+        const [eduLayout, setEduLayout] = useState('text');
         const [langLayout, setLangLayout] = useState('single');
         const [langs, setLangs] = useState([]);
         const [skills, setSkills] = useState(['Teamwork (Suggested)']);
@@ -333,6 +339,7 @@
         window.__setLangLayout = (layout, initial = []) => { setLangLayout(layout); setLangs(initial.map((l) => ({ key: key(), ...l }))); };
         window.__setSkills = setSkills;
         window.__setEdu = setEdu;
+        window.__setEduLayout = (layout, initial) => { setEduLayout(layout); setEdu(initial.map((e) => ({ key: key(), ...e }))); };
 
         const abilities = langLayout === 'single' ? ABILITY_SINGLE : ABILITY_SPLIT;
         const scale = langLayout === 'single' ? NUMBERED : LINKEDIN;
@@ -345,8 +352,12 @@
               name: 'Education', title: 'Education', items: edu, setItems: setEdu, firstUndeletable: true,
               blank: () => ({ school: '', degree: '', fieldOfStudy: [], gpa: '', from: null, to: null }),
               render: (e, set, i) => [
-                h(Text, { key: 's', auto: 'schoolName', fkit: `education-${i}--schoolName`, label: 'School or University',
-                          required: true, value: e.school, onChange: (v) => set({ school: v }) }),
+                eduLayout === 'prompt'
+                  ? h(Prompt, { key: 'sp', auto: 'school', fkit: `education-${i}--school`, label: 'School or University*',
+                                values: e.school ? [e.school] : [], catalogue: SCHOOLS, multi: false, searchOn: 'enter',
+                                onChange: (v) => set({ school: v[0] ?? '' }) })
+                  : h(Text, { key: 's', auto: 'schoolName', fkit: `education-${i}--schoolName`, label: 'School or University',
+                              required: true, value: e.school, onChange: (v) => set({ school: v }) }),
                 h(Select, { key: 'd', auto: 'degree', fkit: `education-${i}--degree`, label: 'Degree*',
                             value: e.degree, options: DEGREES, onChange: (v) => set({ degree: v }) }),
                 h(Prompt, { key: 'f', auto: 'fieldOfStudy', fkit: `education-${i}--fieldOfStudy`, label: 'Field of Study',
@@ -363,9 +374,9 @@
                             onChange: (v) => set({ fieldOfStudy: v }) }),
                 h(Text, { key: 'g', auto: 'gradeAverage', fkit: `education-${i}--gradeAverage`, label: 'Overall Result (GPA)',
                           value: e.gpa, onChange: (v) => set({ gpa: v }) }),
-                h(DateField, { key: 'a', auto: 'firstYearAttended', fkit: `education-${i}--firstYearAttended`, label: 'From',
+                eduLayout === 'text' && h(DateField, { key: 'a', auto: 'firstYearAttended', fkit: `education-${i}--firstYearAttended`, label: 'From',
                                value: e.from, onChange: (v) => set({ from: v }) }),
-                h(DateField, { key: 'b', auto: 'lastYearAttended', fkit: `education-${i}--lastYearAttended`,
+                eduLayout === 'text' && h(DateField, { key: 'b', auto: 'lastYearAttended', fkit: `education-${i}--lastYearAttended`,
                                label: 'To (Actual or Expected)', value: e.to, onChange: (v) => set({ to: v }) }),
               ],
             }),
@@ -673,6 +684,40 @@
         check('Submit clicks Next exactly once', window.__nextClicks, 1);
         check('and says so', /^Submitted/.test(widgetMsg()), true);
         check('no popup left open after Submit', openPopups().length, 0);
+
+        /* ---- Education on a tenant whose School is a catalogue prompt ----
+           Education 1 already holds the profile's first school and degree, as
+           the résumé parse leaves it; Education 2 is blank. Each must get its
+           own school — not Education 1's details landing in Education 2. */
+        window.__setEduLayout('prompt', [
+          { school: 'Sample Tech Institute', degree: "Master's Degree (±18 years)", fieldOfStudy: [], gpa: '', from: null, to: null },
+          { school: '', degree: '', fieldOfStudy: [], gpa: '', from: null, to: null },
+        ]);
+        await sleep(200);
+        msg = await press('education');
+        const pe = S().edu;
+        check('prompt school: no entry added', pe.length, 2);
+        check('prompt school: Education 1 keeps the first school, and gets the rest of it',
+          [pe[0].school, pe[0].degree, pe[0].gpa], ['Sample Tech Institute', "Master's Degree (±18 years)", '3.9']);
+        check('prompt school: Education 2 gets the second school, picked from the list',
+          [pe[1].school, pe[1].degree, pe[1].fieldOfStudy, pe[1].gpa],
+          ['Example State University', "Bachelor's Degree (±16 years)", ['Widgetry'], '3.5']);
+        check('prompt school: the school is not reported as missing', /school — not on this form/.test(msg), false);
+        check('prompt school: no popup left open', openPopups().length, 0);
+
+        msg = await press('education');
+        check('prompt school, pressed again: nothing changed',
+          [S().edu.length, S().edu.map((e) => e.school)], [2, ['Sample Tech Institute', 'Example State University']]);
+
+        /* Education 1 started but with no school: still Education 1. */
+        window.__setEduLayout('prompt', [
+          { school: '', degree: "Master's Degree (±18 years)", fieldOfStudy: [], gpa: '', from: null, to: null },
+          { school: '', degree: '', fieldOfStudy: [], gpa: '', from: null, to: null },
+        ]);
+        await sleep(200);
+        msg = await press('education');
+        check('a half-filled Education 1 is filled in place, not skipped for the blank one',
+          S().edu.map((e) => e.school), ['Sample Tech Institute', 'Example State University']);
 
         lines.push(`  --   whole run took ${Math.round(performance.now() - t0)} ms`);
       }

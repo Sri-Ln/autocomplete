@@ -23,7 +23,9 @@
  *                    [role=group][aria-labelledby="<Name>-<n>-panel"], one
  *                    data-automation-id="add-button" per section ("Add" with
  *                    no entries, "Add Another" after)
- *    education       formField-schoolName (text), formField-degree (listbox
+ *    education       formField-schoolName (text) — or, on another tenant
+ *                    (2026-10-11), formField-school (catalogue prompt, no
+ *                    year fields) — formField-degree (listbox
  *                    button + a display:none value input), formField-
  *                    fieldOfStudy (typeahead prompt), formField-gradeAverage
  *                    (GPA, text), formField-firstYearAttended / -lastYearAttended
@@ -642,19 +644,53 @@
    * EDUCATION
    * ==================================================================== */
 
-  const schoolOf = (id) => textInput(field(entry(id), 'schoolName'))?.value.trim() ?? '';
+  /**
+   * The School field. Tenants build it two ways: a text box (formField-
+   * schoolName, the 2026-10-08 page) or a catalogue prompt (formField-school,
+   * seen on a 2026-10-11 page), where the school is a pill picked from a search.
+   */
+  const schoolField = (e) => fieldAny(e, ['schoolName', 'school']);
+  const isPrompt = (wrap) => !!wrap?.querySelector('[data-automation-id="multiSelectContainer"]');
 
-  /** A panel nobody has started: no school, no degree, no field of study. */
-  function isBlankEducation(id) {
-    const e = entry(id);
-    return !schoolOf(id) && !shown(field(e, 'degree')) && !pills(field(e, 'fieldOfStudy')).length;
+  function schoolOf(id) {
+    const wrap = schoolField(entry(id));
+    if (isPrompt(wrap)) return pills(wrap)[0] ?? '';
+    return textInput(wrap)?.value.trim() ?? '';
+  }
+
+  /** School on a catalogue prompt: the listed name for the profile's school. */
+  async function fillSchoolPrompt(wrap, school, label, report) {
+    const old = pills(wrap);
+    if (old.some((t) => X.sameSchool(t, school))) return report.already.push(label);
+
+    // Word for word first; a light rewording ("Inst." for "Institute") only after.
+    const res = await promptPick(wrap, school, (texts) =>
+      X.bestPromptOption(texts, school, { min: 0.97 }) ??
+      (() => {
+        const index = texts.findIndex((t) => X.sameSchool(t, school));
+        return index >= 0 ? { index, text: texts[index] } : null;
+      })()
+    );
+    if (!res.ok) {
+      return report.left.push(`${label} — ${res.reason}; pick it yourself, or "School Not Found" if it is not listed`);
+    }
+    for (const t of old) {
+      if (t !== res.text && pills(wrap).includes(t)) await removePill(wrap, t);
+    }
+    report.filled.push(label);
+    if (old.length) report.replaced.push(`${label} ("${old[0]}")`);
   }
 
   async function fillEducationEntry(id, edu, report) {
     const name = entryName(id);
     const e = () => entry(id);
 
-    fillText(field(e(), 'schoolName'), edu.school, `${name} school`, report);
+    const schoolWrap = schoolField(e());
+    if (edu.school && isPrompt(schoolWrap)) {
+      await fillSchoolPrompt(schoolWrap, edu.school, `${name} school`, report);
+    } else {
+      fillText(schoolWrap, edu.school, `${name} school`, report);
+    }
 
     /* Degree — a ladder against a listbox. */
     const degreeLadder = X.toLadder(edu.degree);
@@ -732,7 +768,7 @@
 
     /* Match before adding. First pass: an entry already naming the school —
      * the résumé parse's — is THAT education, whatever slot it sits in. Second
-     * pass: an entry nobody has started. Only then is Add clicked. */
+     * pass: the remaining entries in page order. Only then is Add clicked. */
     const ids = entryIds(sectionRoot('Education'), 'Education');
     const used = new Set();
     const target = wanted.map((edu) => {
@@ -742,15 +778,16 @@
       return id ?? null;
     });
 
-    /* Second pass: a blank entry; failing that, any entry not yet claimed, in
-     * order. The résumé parse's Education 1 with the school misspelt is still
-     * Education 1, and is corrected rather than duplicated. */
+    /* Second pass: the first entry not yet claimed, in page order. Never "a
+     * blank one first": an Education 1 with only a degree filled is not blank,
+     * and skipping it put the profile's first education into Education 2 and
+     * the second into Education 1. The résumé parse's Education 1 with the
+     * school misspelt is still Education 1, and is corrected, not duplicated. */
     for (let i = 0; i < wanted.length; i++) {
       if (target[i]) continue;
       const free = entryIds(sectionRoot('Education'), 'Education').filter((x) => !used.has(x));
-      const blank = free.find((x) => isBlankEducation(x)) ?? free[0];
-      if (blank) {
-        target[i] = blank;
+      if (free[0]) {
+        target[i] = free[0];
       } else {
         target[i] = await addEntry('Education');
         if (!target[i]) {
