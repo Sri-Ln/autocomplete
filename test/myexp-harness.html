@@ -607,7 +607,8 @@
         check('A: fluent → the top of the numbered scale', lvl(langs[0]), ['5 - Fluent']);
         check('A: intermediate overall on the single dropdown', lvl(langs[1]), ['3 - Intermediate']);
         check('A: beginner → 1, not "Classroom Study"', lvl(langs[2]), ['1 - Beginner']);
-        check('A: the unlisted language is reported', /Toki Pona — "Toki Pona" is not on this list/.test(msg), true);
+        check('A: the unlisted language is said briefly', /Toki Pona not in list\./.test(msg), true);
+        check('A: and is not a to-do', /Needs you/.test(msg), false);
         check('A: no popup left open', openPopups().length, 0);
 
         msg = await press('languages');

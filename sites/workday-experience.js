@@ -166,7 +166,7 @@
    * ==================================================================== */
 
   function newReport(section) {
-    return { section, filled: [], replaced: [], already: [], kept: [], left: [], failed: [], added: 0, note: '' };
+    return { section, filled: [], replaced: [], already: [], kept: [], left: [], failed: [], unavailable: [], added: 0, note: '' };
   }
 
   /** File a chooseFromListbox result under the right heading. */
@@ -236,6 +236,19 @@
     return appeared.length === 1 ? appeared[0] : null;
   }
 
+  /** Options once the list stops growing: some read twice, 150 ms apart, the
+   *  same. Gives up after 3 s and returns whatever is there by then. */
+  async function settledOptions(read) {
+    let prev = read();
+    for (const until = Date.now() + 3000; Date.now() < until; ) {
+      await sleep(150);
+      const now = read();
+      if (now.length && now.length === prev.length) return now;
+      prev = now;
+    }
+    return prev;
+  }
+
   async function chooseFromListbox(wrap, choose) {
     const trigger = listboxButton(wrap) ?? wrap?.querySelector('button');
     if (!trigger) return { ok: false, reason: 'no dropdown button' };
@@ -244,13 +257,28 @@
     trigger.click();
     const popup = await AF.waitFor(() => openedBy(trigger, before), 2500);
     if (!popup) return { ok: false, reason: 'the dropdown did not open' };
-    await sleep(80);
 
-    const texts = W.optionsIn(popup).map((o) => W.optionText(o));
-    const pick = choose(texts);
+    /* A new entry's list is fetched from the server on its first open, so it
+     * opens empty or part-filled and grows. Found live on a Microsoft tenant:
+     * read at 80 ms, English and Hindi were "not on this list" of 130 that
+     * held both, and only a later entry, opened once the list had arrived,
+     * found Tamil. So read once the option count holds still, and on a miss
+     * keep re-reading while the list is still growing. */
+    const read = () => W.optionsIn(openedBy(trigger, before) ?? popup).map((o) => W.optionText(o));
+    let texts = await settledOptions(read);
+    let pick = choose(texts);
+    for (const until = Date.now() + 2000; !pick?.ok && Date.now() < until; ) {
+      await sleep(250);
+      const again = read();
+      if (again.length === texts.length) continue;
+      texts = await settledOptions(read);
+      pick = choose(texts);
+    }
     if (!pick?.ok) {
       await W.closePopup();
-      return { ok: false, reason: pick?.reason ?? 'nothing suitable', sample: texts.slice(0, 6) };
+      // `missing` only off a list that loaded: an empty one proves nothing.
+      return { ok: false, reason: pick?.reason ?? 'nothing suitable', missing: !!pick?.missing && texts.length > 1,
+        read: texts.length, sample: texts.slice(0, 6) };
     }
     // Already the right one: close the list rather than click it again.
     const was = shown(wrap);
@@ -871,7 +899,7 @@
     if (promptInput(wrap)) return promptPick(wrap, name, match);
     return chooseFromListbox(wrap, (texts) => {
       const hit = match(texts);
-      return hit ? { ok: true, ...hit } : { ok: false, reason: `"${name}" is not on this list` };
+      return hit ? { ok: true, ...hit } : { ok: false, reason: `"${name}" is not on this list`, missing: true };
     });
   }
 
@@ -891,7 +919,13 @@
     } else {
       const res = await chooseLanguage(langWrap, name);
       if (!res.ok) {
-        report.left.push(`${name} — ${res.reason}`);
+        // Not offered by this employer: nothing the user can do, so not a to-do.
+        if (res.missing) {
+          AF.log(`${name} not in the language list`, res);
+          report.unavailable.push(name);
+        } else {
+          report.left.push(`${name} — ${res.reason}`);
+        }
         return 'unanswered';
       }
       report.filled.push(`${name}`);
@@ -1182,6 +1216,9 @@
         const more = todo.length > 2 ? ` (+${todo.length - 2} more)` : '';
         text += ` Needs you: ${todo.slice(0, 2).map(clip).join('; ')}${more}.`;
       }
+      // Languages this employer's list does not offer — said, never asked of the user.
+      const gone = report.unavailable ?? [];
+      if (gone.length) text += ` ${gone.join(', ')} not in list.`;
 
       const kind = report.failed.length ? 'err' : todo.length ? 'warn' : 'ok';
       return { kind, text };
