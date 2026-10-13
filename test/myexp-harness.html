@@ -219,7 +219,12 @@
       /* `checkboxes` / `radios`: each result row carries that input, and only
          the input selects — a click on the row's text does nothing, as on the
          live tenants (Skills: checkboxes; one tenant's Field of Study: radios). */
-      function Prompt({ auto, fkit, label, values, onChange, catalogue, searchOn, multi, browse, delay = 0, onQuery, checkboxes, radios }) {
+      /* `autoSingle`: as Workday's own loadSearchResults does, a search that
+         returns exactly one result selects it by itself, when the results land
+         — which, with `delay`, is after the Enter. And the row's checkbox
+         TOGGLES, as Workday's onSelectItem does: ticking a ticked row removes
+         that skill. Both together are how a live run unticked skills. */
+      function Prompt({ auto, fkit, label, values, onChange, catalogue, searchOn, multi, browse, delay = 0, onQuery, checkboxes, radios, autoSingle }) {
         const [query, setQuery] = useState('');
         const [searched, setSearched] = useState(null);
         const [open, setOpen] = useState(false);
@@ -233,6 +238,11 @@
           return () => clearTimeout(t);
         }, [term]);
         const shownTerm = delay ? applied : term;
+        useEffect(() => {
+          if (!autoSingle || !applied) return;
+          const hits = catalogue.filter((o) => o.toLowerCase().includes(applied.toLowerCase()));
+          if (hits.length === 1 && !values.includes(hits[0])) onChange([...values, hits[0]]);
+        }, [applied]);
         const results = !open ? []
           : shownTerm ? catalogue.filter((o) => o.toLowerCase().includes(shownTerm.toLowerCase()))
           : browse ?? [];
@@ -254,6 +264,12 @@
                   if (e.key !== 'Enter') return;
                   e.preventDefault();
                   setSearched(query); setOpen(true);
+                  /* __enterUnticks: Enter lands on a highlighted, ticked row and
+                     toggles it off — the loss fillSkills must notice and undo. */
+                  if (window.__enterUnticks && values.includes(window.__enterUnticks)) {
+                    onChange(values.filter((x) => x !== window.__enterUnticks));
+                    window.__enterUnticks = null;
+                  }
                   if (window.__enterCommits) {
                     const first = catalogue.find((o) => o.toLowerCase().includes(query.toLowerCase()));
                     if (first) add(first);
@@ -269,7 +285,8 @@
             results.map((o) => h('div', { key: o, role: 'option', 'data-automation-id': 'menuItem',
                                           onClick: () => { if (shownTerm && !checkboxes && !radios) add(o); } },
               checkboxes && h('input', { type: 'checkbox', checked: values.includes(o),
-                                         onChange: () => { if (shownTerm) add(o); } }),
+                                         onChange: () => { if (!shownTerm) return;
+                                           if (values.includes(o)) onChange(values.filter((x) => x !== o)); else add(o); } }),
               radios && h('input', { type: 'radio', name: `${fkit}-results`, checked: values.includes(o),
                                      onChange: () => { if (shownTerm) add(o); } }),
               h('div', { 'data-automation-id': 'promptLeafNode' },
@@ -409,6 +426,7 @@
               h('h4', { id: 'Skills-section' }, 'Skills'),
               h(Prompt, { auto: 'skills', fkit: 'skills--skills', label: 'Type to Add Skills', values: skills,
                           catalogue: SKILLS, searchOn: 'enter', multi: true, checkboxes: true,
+                          autoSingle: true, delay: window.__skillsDelay ?? 700,
                           onChange: setSkills })),
 
             h(Section, {
@@ -647,6 +665,16 @@
         window.__enterCommits = false;
         check('an Enter that selects the wrong row is not accepted', trap.ok, false);
         check('and the wrong pill is removed again', S().skills, ['Teamwork (Suggested)']);
+
+        /* A search that unticks a skill already there (Workday's rows toggle):
+           fillSkills checks every pill survived, and puts a lost one back. */
+        window.__setSkills(['Teamwork (Suggested)', 'Gadgetry']);
+        await sleep(100);
+        window.__enterUnticks = 'Gadgetry'; // not in the profile: only the guard can bring it back
+        msg = await press('skills');
+        check('a skill unticked during another search is put back',
+          [S().skills.includes('Gadgetry'), S().skills.includes('Java (Programming Language)')], [true, true]);
+        check('and nothing is left unticked', window.__enterUnticks, null);
 
         /* ---- Websites ---- */
         msg = await press('websites');

@@ -302,6 +302,13 @@
     }
   }
 
+  /** Is this result row already selected? Its own input says so, and Workday
+   *  also marks the row data-automation-checked="Checked". Note aria-selected
+   *  and data-automation-selected only mean HIGHLIGHTED there, not chosen. */
+  const isTicked = (row, box) =>
+    !!(box?.checked || row?.querySelector('[data-automation-checked="Checked"]') ||
+       row?.getAttribute('data-automation-checked') === 'Checked');
+
   /** Remove one pill by its delete charm — only ever one we just caused. */
   async function removePill(wrap, text) {
     const pill = [...wrap.querySelectorAll('[data-automation-id="selectedItem"]')]
@@ -457,13 +464,30 @@
      * ladder cycled through all of them. Rows without one are clicked as before. */
     const row = rows[hit.index];
     const box = row?.querySelector('input[type="checkbox"], input[type="radio"]');
+    const newPill = () =>
+      pills(wrap).find((t) => !pillsBefore.includes(t) && X.promptScore(t, hit.text) >= 0.97) ?? null;
+
+    /* Never click a row that is already selected: on Workday that click is a
+     * TOGGLE (onSelectItem removes an item whose box was ticked). A row shows
+     * ticked here when Workday selected it by itself — its loadSearchResults
+     * selects a search's only result the moment the results land, which can
+     * be well after the Enter. Clicking it then unticked the very skill we
+     * searched for: seen live on a 40-skill list, 2026-10-12. */
+    if (isTicked(row, box)) {
+      AF.log(`search "${query}": "${hit.text}" is already ticked — not clicking it`);
+      const landed = newPill() ?? (await AF.waitFor(newPill, 1200));
+      clearQuery(promptInput(wrap));
+      await W.closePopup();
+      return landed
+        ? { ok: true, text: hit.text, texts }
+        : { ok: false, reason: `"${hit.text}" shows ticked but no pill appeared`, texts };
+    }
+
     if (!W.clickRow(box?.isConnected ? box : row)) {
       await W.closePopup();
       return { ok: false, reason: 'the option list moved under us', texts };
     }
 
-    const newPill = () =>
-      pills(wrap).find((t) => !pillsBefore.includes(t) && X.promptScore(t, hit.text) >= 0.97) ?? null;
     let landed = await AF.waitFor(() => newPill() || (box?.checked ? 'ticked' : null), 1500);
     if (landed === 'ticked') {
       // Ticked in the list; some prompts only add the pill once the list closes.
@@ -989,6 +1013,26 @@
     return X.bestPromptOption(texts, skill, { min: 0.97 });
   }
 
+  /**
+   * The promise above, checked rather than assumed: every pill that was there
+   * before a search must still be there after it. Workday's result rows
+   * toggle, so any click or Enter that lands on a ticked row takes a skill
+   * away silently. If that ever happens again, the skill is searched for and
+   * put back (exact text only); one that cannot be is reported as failed.
+   */
+  async function restoreLost(wrap, before, report) {
+    const lost = before.filter((t) => !pills(wrap).includes(t));
+    for (const text of lost) {
+      AF.log(`skills: "${text}" disappeared during a search — putting it back`);
+      const res = await promptPick(wrap, text, (texts) => {
+        const i = texts.indexOf(text);
+        return i >= 0 ? { index: i, text } : null;
+      });
+      AF.log(`skills: "${text}" ${res.ok ? 'put back' : `could not be put back: ${res.reason}`}`);
+      if (!res.ok) report.failed.push(`${text} was unticked — add it back by hand`);
+    }
+  }
+
   async function fillSkills({ profile }) {
     const report = newReport('Skills');
     const skills = (profile?.skills ?? []).map((s) => String(s).trim()).filter(Boolean);
@@ -1007,7 +1051,9 @@
         report.already.push(skill);
         continue;
       }
+      const before = pills(wrap);
       const res = await promptPick(wrap, skill, (texts) => skillMatch(texts, skill));
+      await restoreLost(wrap, before, report);
       if (res.ok) {
         report.filled.push(X.promptScore(res.text, skill) >= 1 ? skill : `${skill} → "${res.text}"`);
       } else {
