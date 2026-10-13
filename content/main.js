@@ -305,7 +305,7 @@
 
       /* Every section in order, then ONE summary line for the lot — the same
        * counts and "Needs you" a single section gives, merged. */
-      const merged = { section: 'All sections', filled: [], replaced: [], already: [], kept: [], left: [], failed: [], added: 0, note: '' };
+      const merged = { section: 'All sections', filled: [], replaced: [], already: [], kept: [], left: [], failed: [], unavailable: [], added: 0, note: '' };
       for (const sid of presentSections()) {
         sectionCurrent = sid;
         paint();
@@ -314,7 +314,7 @@
           merged.failed.push(msg.text);
           continue;
         }
-        for (const k of ['filled', 'replaced', 'already', 'kept', 'left', 'failed']) {
+        for (const k of ['filled', 'replaced', 'already', 'kept', 'left', 'failed', 'unavailable']) {
           merged[k].push(...(report[k] ?? []));
         }
         merged.added += report.added ?? 0;
