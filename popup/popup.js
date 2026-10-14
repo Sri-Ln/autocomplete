@@ -12,11 +12,13 @@ const send = (msg) => chrome.runtime.sendMessage(msg);
 const PROFILE_FIELDS = [
   'firstName', 'lastName', 'phone', 'phoneExtension', 'address1', 'address2',
   'city', 'state', 'zip', 'county', 'country', 'source', 'noticePeriod',
-  'visaExplanation',
+  'expectedSalary', 'visaExplanation',
+  /* <select>s — .value reads and writes them the same as an input. */
+  'eeoGender', 'eeoEthnicity', 'eeoHispanic', 'eeoVeteran', 'eeoDisability',
 ];
 
 /** Rendered as one-per-line textareas, stored as arrays. */
-const PROFILE_LIST_FIELDS = ['employers', 'relativesAt'];
+const PROFILE_LIST_FIELDS = ['employers'];
 
 /**
  * Tri-state fields rendered as segmented controls rather than <select>.
@@ -24,7 +26,7 @@ const PROFILE_LIST_FIELDS = ['employers', 'relativesAt'];
  */
 const PROFILE_SEG_FIELDS = [
   'over18', 'willingToRelocate', 'willingToTravel',
-  'workAuthorized', 'needsSponsorship',
+  'workAuthorized', 'needsSponsorshipNow', 'needsSponsorshipFuture',
 ];
 
 /* ------------------------------------------------------------------ */
@@ -164,7 +166,9 @@ async function loadProfile() {
   for (const key of PROFILE_LIST_FIELDS) {
     $(key).value = (profile[key] ?? []).join('\n');
   }
-  for (const key of PROFILE_SEG_FIELDS) setSeg(key, profile[key]);
+  /* A profile saved before sponsorship was split has one answer for both. */
+  const legacy = { needsSponsorshipNow: profile.needsSponsorship, needsSponsorshipFuture: profile.needsSponsorship };
+  for (const key of PROFILE_SEG_FIELDS) setSeg(key, profile[key] || legacy[key]);
   paintVisaCount();
   paintExperience(profile);
 }
@@ -280,6 +284,7 @@ $('saveProfileBtn').addEventListener('click', async () => {
   const profile = { ...storedProfile };
   for (const key of PROFILE_FIELDS) profile[key] = $(key).value;
   for (const key of PROFILE_SEG_FIELDS) profile[key] = segValue(key);
+  delete profile.needsSponsorship; // split into Now / Future; a later "–" must not bring it back
   for (const key of PROFILE_LIST_FIELDS) {
     profile[key] = $(key)
       .value.split('\n')

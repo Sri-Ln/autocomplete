@@ -55,6 +55,7 @@
         "content/guards.js",
         "sites/workday.js",
         "sites/workday-experience.js",
+        "sites/workday-questions.js",
         "sites/index.js",
         "content/registry.js",
         "content/widget.js",

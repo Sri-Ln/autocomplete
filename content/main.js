@@ -33,6 +33,8 @@
    * section has appeared. See the "section pages" block below. */
   let sectionRunning = null;
   let sectionState = {};
+  /* Has the main button's fill run on this page? Then it reads "Submit". */
+  let pageFilled = false;
   let sectionsShown = '';
   /* The widget's "Save skills to profile on Submit" box. Unticked on every new
    * page, so saving a page's skills is always that application's choice. */
@@ -257,14 +259,27 @@
       running: sectionRunning === id || (sectionRunning === 'all' && sectionCurrent === id),
       disabled: !!sectionRunning || busy,
     }));
-    /* "Fill all" first, full width: every section above, in order. */
-    if (ids.length > 1) {
-      buttons.unshift({
-        id: 'all', label: 'Fill all', wide: true,
-        running: sectionRunning === 'all', disabled: !!sectionRunning || busy,
-      });
-    }
-    return buttons;
+    /* "Fill all" is the main button now (see mainLabel), and a page with one
+     * section needs no button of its own: the main button is its Fill. */
+    return ids.length > 1 ? buttons : [];
+  }
+
+  /** What the main button fills: every section, or the page's only one. */
+  function leadSection() {
+    const ids = presentSections();
+    return ids.length > 1 ? 'all' : ids[0];
+  }
+
+  /**
+   * The one main button: "Fill all" / "Fill", then "Submit" once that fill has
+   * run — the user's ask, 2026-10-13. A per-section button on My Experience
+   * re-fills one part and leaves it alone.
+   */
+  function mainLabel() {
+    if (busy) return 'Submitting…';
+    if (sectionRunning === leadSection()) return 'Filling…';
+    if (pageFilled) return 'Submit';
+    return presentSections().length > 1 ? 'Fill all' : 'Fill';
   }
 
   /** Which section "Fill all" is on right now, for its button's spinner. */
@@ -290,6 +305,7 @@
     if ((!all && !ctx.page?.sections?.[id]) || sectionRunning || busy) return;
 
     sectionRunning = id;
+    const lead = id === leadSection();
     paint();
     try {
       /* Fresh, not cached: the user may have just saved their experience in
@@ -297,6 +313,7 @@
       profileCache = null;
       const p = await profile();
       if (!p) return say('err', 'Could not load your profile. Reload the page and try again.');
+      if (lead) pageFilled = true; // the main button turns to Submit once this run ends
 
       if (!all) {
         const { msg } = await runSection(id, p);
@@ -361,10 +378,40 @@
     }
   }
 
+  /**
+   * Before Submit's click on a questions page: remember what the user answered,
+   * with the company swapped for [company]. remember() refuses anything a rule
+   * owns, so sign-offs, self-identification and "worked for X" never land here.
+   * Never blocks the click. → text for after "Submitted."
+   */
+  async function rememberQuestions() {
+    if (!ctx.page?.readAnswers) return '';
+    try {
+      const res = await send({ type: 'getAnswers' });
+      if (!res?.ok) return '';
+      let learned = res.answers ?? {};
+      let n = 0;
+      const base = { company: AF.tenantFromHostname(), page: ctx.pageKey };
+      for (const a of ctx.page.readAnswers()) {
+        const out = AF.questions.remember(learned, a.question, a.answer,
+          { ...base, widget: a.widget, fieldId: a.fieldId });
+        if (out.stored) { learned = out.learned; n++; }
+      }
+      if (!n) return '';
+      await send({ type: 'saveAnswers', answers: learned });
+      return ` Remembered ${n} answer${n === 1 ? '' : 's'}.`;
+    } catch (err) {
+      AF.log('remembering answers failed', err);
+      return '';
+    }
+  }
+
   /** The Submit under the section buttons: settle the page, then click Next once. */
   async function onSectionSubmit() {
     const sel = ctx.page?.manualSubmit;
     if (!sel || sectionRunning || busy) return;
+    /* Before its fill has run, the main button IS the fill. */
+    if (!pageFilled) return onSection(leadSection());
     busy = true;
     paint();
     try {
@@ -378,8 +425,9 @@
         return say('warn', 'Next is disabled — Workday wants something fixed on the page first.');
       }
       const saved = await learnFromPage();
+      const remembered = await rememberQuestions();
       btn.click();
-      say(saved.kind, `Submitted.${saved.text} If Workday flags anything, fix it and press Submit again.`);
+      say(saved.kind, `Submitted.${saved.text}${remembered} If Workday flags anything, fix it and press Submit again.`);
     } finally {
       busy = false;
       paint();
@@ -746,14 +794,14 @@
         actionLabel: null,
         sections: sectionButtons(),
         sectionSubmit: ctx.page.manualSubmit
-          ? { label: busy ? 'Submitting…' : 'Submit', disabled: busy || !!sectionRunning }
+          ? { label: mainLabel(), disabled: busy || !!sectionRunning }
           : null,
         saveSkills: ctx.page.manualSubmit && presentSections().includes('skills')
           ? { checked: saveSkillsOnSubmit, disabled: busy }
           : null,
         message: lastMessage ?? {
           kind: 'info',
-          text: 'Fill the sections you want, then Submit.',
+          text: 'Press Fill, check the page, then Submit.',
         },
       });
     }
@@ -1179,6 +1227,7 @@
       lastRun = null;
       lastMessage = null;
       sectionState = {};
+      pageFilled = false;
       saveSkillsOnSubmit = false;
     }
 
