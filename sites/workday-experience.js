@@ -299,6 +299,12 @@
       await W.closePopup();
       return { ok: false, reason: `clicked "${pick.text}" but the field did not update` };
     }
+    /* Move focus off the field, as a person's next click does. Workday keeps a
+     * pick only once focus leaves its button: traced live on Vandelay Capital
+     * (2026-10-14), every dropdown kept its answer because we opened the next
+     * one at once — except the LAST, whose focus stayed put and which went
+     * back to "Select One" inside 100 ms. */
+    if (document.activeElement === trigger) trigger.blur();
     return { ...pick, ok: true, was };
   }
 
@@ -595,11 +601,22 @@
    * So we do what a person does — click the display, then type the number —
    * and accept it only when the spinbutton reports that number back.
    */
+  /** "MM/DD/YYYY" → { month, day, year }; anything else via X.parseMonthYear, with no day. */
+  function parseDate(raw) {
+    const m = String(raw ?? '').trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (m) {
+      const [month, day, year] = [m[1], m[2], m[3]].map(Number);
+      return month >= 1 && month <= 12 && day >= 1 && day <= 31 ? { month, day, year } : null;
+    }
+    const d = X.parseMonthYear(raw);
+    return d ? { ...d, day: null } : null;
+  }
+
   async function setDate(wrap, raw, label, report) {
     if (!String(raw ?? '').trim()) return;
     if (!wrap) return report.left.push(`${label} — not on this form`);
 
-    const date = X.parseMonthYear(raw);
+    const date = parseDate(raw);
     if (!date) return report.left.push(`${label} — "${raw}" is not a date I can read (use 2019 or 08/2019)`);
 
     const part = (name) => ({
@@ -608,6 +625,7 @@
     });
     const parts = [
       { name: 'month', ...part('Month'), want: date.month },
+      { name: 'day', ...part('Day'), want: date.day },
       { name: 'year', ...part('Year'), want: date.year },
     ].filter((p) => p.input);
 
@@ -1206,6 +1224,7 @@
         report.replaced.length && `${report.replaced.length} replaced`,
         report.already.length && `${report.already.length} already set`,
         report.added && `${report.added} ${report.added === 1 ? 'entry' : 'entries'} added`,
+        report.signed?.length && `${report.signed.length} signed`,
       ].filter(Boolean);
       let text = `${report.section}: ${parts.join(', ') || 'nothing to do'}.`;
 

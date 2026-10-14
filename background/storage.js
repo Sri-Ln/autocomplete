@@ -56,17 +56,30 @@ export const EMPTY_PROFILE = {
    * would be right for one employer and wrong for every other. */
 
   employers: [],    // companies you have worked for
-  relativesAt: [],  // companies where you have a relative; empty list means "none"
 
   /* Tri-state: 'yes' | 'no' | '' . Empty means DO NOT ANSWER — never a default.
    * Work authorisation and sponsorship in particular are legal declarations, so
    * they are answered only from a value set here deliberately. */
   over18: '',
   workAuthorized: '',
-  needsSponsorship: '',
+  needsSponsorshipNow: '',    // sponsorship needed to commence employment
+  needsSponsorshipFuture: '', // sponsorship needed in the future
   willingToRelocate: '',
   willingToTravel: '',
   noticePeriod: '',
+
+  /* One answer to "What is your expected salary?", used as written. */
+  expectedSalary: '',
+
+  /* Self-identification, set deliberately in the popup and used ONLY on the
+   * Voluntary Disclosures and Self Identify pages. '' = leave the question
+   * alone. Values are semantic (see content/questions.js SELF_ID) and are
+   * mapped onto each tenant's wording at fill time. */
+  eeoGender: '',
+  eeoEthnicity: '',
+  eeoHispanic: '',
+  eeoVeteran: '',
+  eeoDisability: '',
 
   /* Free-text answer to "Please explain your visa status".
    *
@@ -105,7 +118,7 @@ function emptyEducation() {
 }
 
 /** Profile keys holding arrays rather than strings. */
-export const PROFILE_LIST_FIELDS = ['employers', 'relativesAt', 'skills'];
+export const PROFILE_LIST_FIELDS = ['employers', 'skills'];
 
 /** The only values a language level may take. '' means "not set". */
 export const LANGUAGE_LEVELS = ['', 'beginner', 'intermediate', 'advanced', 'fluent', 'native'];

@@ -69,15 +69,14 @@ check('employer question is NOT recallable',
   AF.questions.signature('Have you ever worked for Vertex Dynamics as a full-time employee?').recallable,
   false);
 check('and says why', AF.questions.signature('Have you ever worked for Vertex Dynamics?').reason,
-  'refers to a specific employer, so the answer does not transfer');
+  'worked out by a rule (formerEmployee)');
 check('remember() refuses to store it',
   AF.questions.remember({}, 'Have you ever worked for Vertex Dynamics?', 'No').stored, false);
 
-/* Without an employment history it must decline, not assume "No". */
+/* Without an employment history it is a No: the user's call, 2026-10-12. */
 const noHistory = ask('Have you ever worked for Vertex Dynamics?', { ...PROFILE, employers: [] });
-check('no employment history -> declines', noHistory.answer, null);
-check('and asks for what it needs', noHistory.reason,
-  'needs your "employers" list to answer this for "Vertex Dynamics"');
+check('no employment history -> No', noHistory.answer, 'No');
+check('and says why', noHistory.reason, '"Vertex Dynamics" is not in your employment history');
 
 /* ================= the live Acme Insurance question ================= */
 
@@ -102,11 +101,12 @@ check('fuzzy across the legal suffix too',
   ask(ACME_INS, { ...PROFILE, employers: ['Acme Insurance Holdings, Inc.'] }).answer,
   'Yes');
 
-/* A name mentioned only inside the parenthetical is an affiliate of the company
- * being asked about, not the company being asked about. Letting it through would
- * answer Yes to an employer you never worked for. */
-check('a company named only in the parenthetical does not force a Yes',
-  ask('Have you previously been employed by Globex (Acme Corp)?').answer, 'No');
+/* A brand named in the parenthetical is part of what is asked about: "Globex
+ * (Acme Corp)" asks about Acme Corp too, and you worked there. */
+check('a brand named in the parenthetical counts',
+  ask('Have you previously been employed by Globex (Acme Corp)?').answer, 'Yes');
+check('and an unknown one does not',
+  ask('Have you previously been employed by Globex (Hooli)?').answer, 'No');
 
 /* The asterisk must not reach any rule, not just this one. */
 check('asterisked sponsorship still resolves',
@@ -153,10 +153,29 @@ check('authorization and sponsorship are distinct rules',
    ask('Will you require visa sponsorship?').rule],
   ['workAuthorization', 'sponsorship']);
 
-// Unset means decline, never a default.
+// Unset takes the user's default (2026-10-13); a saved value always wins.
 const unset = ask('Will you require sponsorship?', { ...PROFILE, needsSponsorship: '' });
-check('unset flag declines', unset.answer, null);
-check('unset flag explains', unset.reason, 'set "needsSponsorship" in your profile to answer this automatically');
+check('unset sponsorship -> No', unset.answer, 'No');
+check('saved sponsorship Yes wins',
+  ask('Will you require sponsorship?', { ...PROFILE, needsSponsorship: 'yes' }).answer, 'Yes');
+
+/* Split in two (2026-10-13): to commence employment, and in the future. */
+const SP = { ...PROFILE, needsSponsorship: undefined, needsSponsorshipNow: 'no', needsSponsorshipFuture: 'yes' };
+for (const [q, want] of [
+  ['Will you require sponsorship to commence employment?', 'No'],
+  ['Do you currently require visa sponsorship?', 'No'],
+  ['Will you require sponsorship in the future?', 'Yes'],
+  ['Will you now or in the future require sponsorship for employment visa status?', 'Yes'],
+  ['Do you require visa sponsorship?', 'Yes'],
+]) {
+  check(`sponsorship now No, future Yes: "${q.slice(0, 50)}"`, ask(q, SP).answer, want);
+}
+check('both No: "now or in the future" is No',
+  ask('Will you now or in the future require sponsorship?', { ...SP, needsSponsorshipFuture: 'no' }).answer, 'No');
+check('both unset: No',
+  ask('Will you require sponsorship in the future?', { ...SP, needsSponsorshipNow: '', needsSponsorshipFuture: '' }).answer, 'No');
+check('a profile from before the split: its one answer stands for both',
+  ask('Will you require sponsorship to commence employment?', { ...PROFILE, needsSponsorship: 'yes' }).answer, 'Yes');
 
 check('relatives: empty list means No',
   ask('Do you have any relatives employed at Vertex Dynamics?').answer, 'No');
@@ -213,15 +232,11 @@ check('seen count increments',
     AF.questions.signature(generic).signature
   ].seen, 2);
 
-/* ================= "our company" is not recallable either ================= */
+/* ================= "our company" is learnable, as [COMPANY] ================= */
 
-for (const q of [
-  'Why do you want to work at our company?',
-  'Have you applied to this company before?',
-  'Have you interviewed with us previously?',
-]) {
-  check(`not recallable: "${q.slice(0, 40)}"`, AF.questions.signature(q).recallable, false);
-}
+/* The company asking, whoever it is: the answer carries over (2026-10-12). */
+check('recallable: "Why do you want to work at our company?"',
+  AF.questions.signature('Why do you want to work at our company?').recallable, true);
 
 /* ================= visa explanation (free text) ================= */
 
@@ -272,6 +287,80 @@ check('and says what to do', visaUnset.reason,
 
 const visaSet = AF.questions.visaExplanationFor({ visaExplanation: '  As an F-1 visa holder…  ' });
 check('saved explanation is offered, trimmed', visaSet.text, 'As an F-1 visa holder…');
+
+/* ================= Vandelay Capital, 2026-10-13 ================= */
+
+/* Conflict-of-interest questions default to No, job texts to Yes, and work
+ * authorisation, unset, to Yes. Exactly as asked live, required marker and all. */
+const MS = [
+  ['Do you consent to receive follow up communication via SMS WhatsApp from Talent Acquisition regarding job opportunities at Vandelay Capital?*', 'Yes', 'consentDefault'],
+  ['Were you referred or recommended for this position by a Government Official?*', 'No', 'conflictOfInterest'],
+  ['Are you an Immediate Family Member or Close Associate of any Government Official who has the ability to directly or indirectly influence the award of business to Vandelay Capital and/or exercise decision making authority that impacts Vandelay Capital?*', 'No', 'conflictOfInterest'],
+  ['On the basis of employment as a Government Official or employee of a financial regulator, are you subject to any post-employment restrictions (including, but not limited to, cooling off period, non-disclosure of confidential information, recusal requirements, etc.)?*', 'No', 'conflictOfInterest'],
+  ['In a capacity as a Government Official or employee of a financial regulator, have you had the ability to directly or indirectly influence the award of business to Vandelay Capital and/or exercise decision making authority that impacts Vandelay Capital?*', 'No', 'conflictOfInterest'],
+  ['Are you currently, or have you been in the past three years, a Government Official [1], including military and/or law enforcement, or employed by a financial regulator?*', 'No', 'conflictOfInterest'],
+  ['Are you legally authorized to work for Vandelay Capital in the country in which the job is located?*', 'Yes', 'workAuthorization'],
+];
+const BLANK = { firstName: 'A', lastName: 'B' }; // nothing set: the defaults decide
+const askAs = (q, widget, profile = BLANK) => AF.questions.resolve(q, { profile, learned: {}, widget });
+for (const [q, answer, rule] of MS) {
+  const r = askAs(q, 'listbox');
+  check(`MS ${answer}: "${q.slice(0, 50)}"`, [r.answer, r.rule], [answer, rule]);
+}
+
+/* The same flavour in other tenants' words. */
+for (const q of [
+  'Were you referred by a current employee?',
+  'Do you have a spouse or domestic partner who works for a government agency?',
+  'Are you a politically exposed person (PEP)?',
+  'Do you have any family members who are public officials?',
+  'Do you have any conflicts of interest we should know about?',
+]) {
+  check(`default No: "${q.slice(0, 50)}"`, askAs(q, 'choice').answer, 'No');
+}
+
+/* And the guards around them. */
+check('a saved work-authorisation No still wins',
+  askAs(MS[6][0], 'listbox', { workAuthorized: 'no' }).answer, 'No');
+check('"official transcripts" is not a conflict of interest',
+  askAs('Can you provide official transcripts?', 'listbox').rule === 'conflictOfInterest', false);
+/* Any consent question is a Yes, whatever it is about (2026-10-13). */
+for (const [q, widget] of [
+  ['Do you agree to receive marketing text messages about new roles?', 'listbox'],
+  ['I consent to being contacted by phone or email about other opportunities', 'checkbox'],
+  ['Would you like to opt in to text message updates?', 'choice'],
+  ['Opt-in to receive WhatsApp notifications', 'checkbox'],
+  ['Do you consent to us retaining your data for future vacancies?', 'listbox'],
+  ['May we contact you about future positions?', 'choice'],
+  ['Do you consent to being referred to other roles at the company?', 'listbox'],
+]) {
+  const r = askAs(q, widget);
+  // Yes either way; one that starts "I consent" is a sign-off and reported as signed.
+  check(`consent Yes: "${q.slice(0, 50)}"`, r.answer, 'Yes');
+}
+/* No "Yes" row: the row that says Yes in other words, never one that negates. */
+const yes = { answer: 'Yes', source: 'derived', rule: 'consentDefault' };
+const no = { answer: 'No', source: 'derived', rule: 'conflictOfInterest' };
+for (const [opts, want] of [
+  [['I do not consent', 'I consent'], 'I consent'],
+  [['I consent to receive SMS', 'I do not consent to receive SMS'], 'I consent to receive SMS'],
+  [['Opt out', 'Opt in'], 'Opt in'],
+  [["I don't agree", 'I agree'], 'I agree'],
+  [['No, thank you', 'Yes, please contact me'], 'Yes, please contact me'],
+  [['I would like to receive updates', 'I would not like to receive updates'], 'I would like to receive updates'],
+]) {
+  const i = AF.questions.pickOption(opts, yes);
+  check(`Yes picks "${want}" from ${JSON.stringify(opts)}`, opts[i], want);
+}
+check('No picks "I do not consent"', ['I consent', 'I do not consent'][AF.questions.pickOption(['I consent', 'I do not consent'], no)], 'I do not consent');
+check('a Yes with only negating rows picks nothing', AF.questions.pickOption(['I do not consent', 'Decline'], yes), -1);
+
+check('a consent sign-off is still reported as signed',
+  askAs('I have read and consent to the terms and conditions', 'checkbox').source, 'sign-off');
+check('consent to a background check is still left for you',
+  askAs('Do you consent to a background check?', 'listbox').answer, null);
+check('a "Referred by" text box is never answered No',
+  askAs('Referred by (name of employee)', 'text').answer === 'No', false);
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

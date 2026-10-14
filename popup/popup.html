@@ -195,10 +195,6 @@
           asking is checked against this list rather than a remembered answer.
         </p>
 
-        <label>
-          Companies where you have a relative
-          <textarea id="relativesAt" rows="2" placeholder="leave blank if none"></textarea>
-        </label>
 
         <div class="qrow">
           <span class="qlabel">Are you 18 or older?</span>
@@ -228,6 +224,7 @@
         </div>
 
         <label>Notice period<input type="text" id="noticePeriod" placeholder="2 weeks" /></label>
+        <label>Expected salary<input type="text" id="expectedSalary" placeholder="$100,000–$120,000, negotiable" /></label>
 
         <div class="divider">Work authorisation</div>
 
@@ -241,19 +238,30 @@
         </div>
 
         <div class="qrow">
-          <span class="qlabel">Need sponsorship?</span>
-          <div class="seg" id="needsSponsorship" role="radiogroup" aria-label="Need sponsorship?">
-            <button type="button" data-value="" title="Leave blank — you'll answer it">–</button>
+          <span class="qlabel">Sponsorship to start?</span>
+          <div class="seg" id="needsSponsorshipNow" role="radiogroup" aria-label="Need sponsorship to commence employment?">
+            <button type="button" data-value="" title="Leave blank — answered No">–</button>
+            <button type="button" data-value="yes">Yes</button>
+            <button type="button" data-value="no">No</button>
+          </div>
+        </div>
+
+        <div class="qrow">
+          <span class="qlabel">Sponsorship in future?</span>
+          <div class="seg" id="needsSponsorshipFuture" role="radiogroup" aria-label="Need sponsorship in the future?">
+            <button type="button" data-value="" title="Leave blank — answered No">–</button>
             <button type="button" data-value="yes">Yes</button>
             <button type="button" data-value="no">No</button>
           </div>
         </div>
         <p class="fine">
-          These two are legal declarations, so they're answered <b>only</b> from
-          what you set here — never guessed, never carried over from a previous
-          application. Leave either on <b>–</b> and it stays blank for you to
-          fill in. Criminal history, disability, veteran status and demographic
-          questions are never automated at all.
+          These are legal declarations, answered from what you set here — never
+          carried over from a previous application. Left on <b>–</b>, work
+          authorization is answered <b>Yes</b>, both sponsorship questions
+          <b>No</b> and 18-or-older <b>Yes</b>. A question that asks about
+          sponsorship "now or in the future" is <b>Yes</b> if either is. Criminal history is never automated. Demographic questions
+          are answered only from the Self-identification section below, and
+          only on Workday's Voluntary Disclosures and Self Identify pages.
         </p>
 
         <label>
@@ -273,6 +281,58 @@
           insert it. It is never pasted in automatically, and it never overwrites
           something you already typed. <b>Copy</b> is the fallback for the times
           the pill doesn't appear.
+        </p>
+
+        <div class="divider">Self-identification</div>
+        <label>Gender
+          <select id="eeoGender">
+            <option value="">Not set — leave it for me</option>
+            <option value="decline">Decline to answer</option>
+            <option value="male">Male</option>
+            <option value="female">Female</option>
+            <option value="nonbinary">Non-binary</option>
+          </select>
+        </label>
+        <label>Race / ethnicity
+          <select id="eeoEthnicity">
+            <option value="">Not set — leave it for me</option>
+            <option value="decline">Decline to answer</option>
+            <option value="asian">Asian</option>
+            <option value="black">Black or African American</option>
+            <option value="white">White</option>
+            <option value="nativeAmerican">American Indian or Alaska Native</option>
+            <option value="pacificIslander">Native Hawaiian or Pacific Islander</option>
+            <option value="twoOrMore">Two or more races</option>
+            <option value="hispanic">Hispanic or Latino</option>
+          </select>
+        </label>
+        <label>Hispanic / Latino
+          <select id="eeoHispanic">
+            <option value="">Not set — leave it for me</option>
+            <option value="decline">Decline to answer</option>
+            <option value="yes">Yes</option>
+            <option value="no">No</option>
+          </select>
+        </label>
+        <label>Veteran status
+          <select id="eeoVeteran">
+            <option value="">Not set — leave it for me</option>
+            <option value="decline">Decline to answer</option>
+            <option value="notVeteran">Not a protected veteran</option>
+            <option value="protectedVeteran">Protected veteran</option>
+          </select>
+        </label>
+        <label>Disability
+          <select id="eeoDisability">
+            <option value="">Not set — leave it for me</option>
+            <option value="decline">Decline to answer</option>
+            <option value="yes">Yes</option>
+            <option value="no">No</option>
+          </select>
+        </label>
+        <p class="fine">
+          Used only on Workday's Voluntary Disclosures and Self Identify pages,
+          and only as you set it here. Never learned from a page.
         </p>
 
         <button class="primary" id="saveProfileBtn">Save profile</button>

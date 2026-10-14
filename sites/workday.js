@@ -593,6 +593,13 @@ AF.sites.workday = {
     const escape = () =>
       new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true });
 
+    /* Nothing open, nothing to do. An Escape sent anyway lands on the dropdown
+     * just answered — focus stays on its button — and Workday takes it as
+     * "cancel": the LAST question of a page went back to "Select One" after
+     * reporting filled (Vandelay Capital's consent question, 2026-10-13). The
+     * questions before it were followed by another click, never an Escape. */
+    if (!W.visiblePopups().length) return true;
+
     document.activeElement?.dispatchEvent?.(escape());
     document.body.dispatchEvent(escape());
     await new Promise((r) => setTimeout(r, 200));
