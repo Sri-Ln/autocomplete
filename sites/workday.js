@@ -46,6 +46,9 @@ AF.sites.workday = {
     createAccount: {
       label: 'Create Account',
       detectSelector: '[data-automation-id="verifyPassword"]',
+      // The only two pages that use the saved password — so the only two that
+      // need the passphrase. content/main.js gates the unlock on this flag.
+      needsCredential: true,
 
       fields: {
         email: '[data-automation-id="email"]',
@@ -73,6 +76,7 @@ AF.sites.workday = {
      * ================================================================== */
     signIn: {
       label: 'Sign In',
+      needsCredential: true,
       detect: () =>
         !!document.querySelector('[data-automation-id="signInFormo"]') &&
         !document.querySelector('[data-automation-id="verifyPassword"]'),

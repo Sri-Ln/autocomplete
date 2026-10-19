@@ -702,15 +702,19 @@
       ? `<b>${siteLabel}</b> · ${pageLabel}${ctx.forced ? ' (forced)' : ''}`
       : `<b>${siteLabel}</b> · no recognised form on this page`;
 
-    /* Fresh install: nothing is set up yet. */
-    if (!status.configured) {
+    /* Only Create Account and Sign In use the saved password, so only they
+     * care whether a passphrase exists or is unlocked. */
+    const needsKey = !!ctx.page?.needsCredential;
+
+    /* Fresh install: no passphrase yet, and this page needs the password. */
+    if (needsKey && !status.configured) {
       return AF.widget.render({
         context,
         tone: 'warn',
         actionLabel: null,
         message: {
           kind: 'warn',
-          text: 'Not set up yet. Open the extension popup to create your passphrase and save your login.',
+          text: 'No login saved yet. Open the extension popup → Login to create a passphrase and save it.',
         },
       });
     }
@@ -806,8 +810,9 @@
       });
     }
 
-    /* Locked — one passphrase entry per Chrome session. */
-    if (!status.unlocked) {
+    /* Locked — one passphrase entry per Chrome session, and only on a page
+     * that fills the password. */
+    if (needsKey && !status.unlocked) {
       return AF.widget.render({
         context,
         tone: 'warn',
@@ -892,12 +897,14 @@
        * last looked. Re-check before demanding a passphrase we don't need.
        * This is also the path the popup's "Fill this page" takes, which sends
        * no passphrase at all. */
-      if (!status.unlocked) {
+      const needsKey = !!ctx.page?.needsCredential;
+
+      if (needsKey && !status.unlocked) {
         const fresh = await send({ type: 'status' });
         if (fresh) status = fresh;
       }
 
-      if (!status.unlocked) {
+      if (needsKey && !status.unlocked) {
         if (!passphrase) {
           busy = false;
           return say('err', 'Locked — enter your passphrase.');
@@ -931,7 +938,11 @@
   async function doFill() {
     if (!ctx.page) return say('info', 'No recognised form on this page.');
 
-    const data = await send({ type: 'getFillData', hostname: location.hostname });
+    const data = await send({
+      type: 'getFillData',
+      hostname: location.hostname,
+      withCredential: !!ctx.page.needsCredential,
+    });
 
     if (!data?.ok) {
       const reasons = {

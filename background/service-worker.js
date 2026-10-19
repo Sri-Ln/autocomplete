@@ -19,7 +19,8 @@
  *   saveCredential    { host|null, email, password }→ { ok }
  *   deleteCredential  { host|null }                 → { ok }
  *   getSettings / saveSettings
- *   getFillData       { hostname }                  → { ok, profile, credential, picks }
+ *   getFillData       { hostname, withCredential? } → { ok, profile, credential, picks }
+ *                     withCredential:false skips the vault — no key needed
  *   savePick          { hostname, key, value }      → { ok }
  *   listPicks         → { ok, picks }                     (every host)
  *   forgetPick        { hostname, key }             → { ok }
@@ -104,30 +105,40 @@ async function unlock(passphrase) {
  * The key never leaves this worker — only the decrypted password does, and only
  * at the moment of use.
  */
-async function getFillData(hostname) {
-  const meta = await S.getMeta();
-  if (!meta) return { ok: false, reason: 'NOT_CONFIGURED' };
+async function getFillData(hostname, withCredential = true) {
+  /* Most pages (My Information, application questions) never use the login,
+   * and everything they do use is plaintext. Asking for a passphrase there
+   * would gate nothing — so they skip the vault, and with it the lock. */
+  let credential = null;
+  let source = null;
 
-  const key = await currentKey();
-  if (!key) return { ok: false, reason: 'LOCKED' };
+  if (withCredential) {
+    const meta = await S.getMeta();
+    if (!meta) return { ok: false, reason: 'NOT_CONFIGURED' };
 
-  const match = await S.findCredential(hostname);
-  if (!match) return { ok: false, reason: 'NO_CREDENTIAL' };
+    const key = await currentKey();
+    if (!key) return { ok: false, reason: 'LOCKED' };
 
-  let password;
-  try {
-    password = await C.decrypt(key, match.entry);
-  } catch {
-    // Key is valid but this entry will not open — written under an older
-    // passphrase, or storage was edited by hand.
-    return { ok: false, reason: 'DECRYPT_FAILED' };
+    const match = await S.findCredential(hostname);
+    if (!match) return { ok: false, reason: 'NO_CREDENTIAL' };
+
+    let password;
+    try {
+      password = await C.decrypt(key, match.entry);
+    } catch {
+      // Key is valid but this entry will not open — written under an older
+      // passphrase, or storage was edited by hand.
+      return { ok: false, reason: 'DECRYPT_FAILED' };
+    }
+    credential = { email: match.entry.email, password };
+    source = match.source;
   }
 
   return {
     ok: true,
     profile: await S.getProfile(),
-    credential: { email: match.entry.email, password },
-    source: match.source, // 'default' | 'override' — the widget reports which
+    credential,
+    source, // 'default' | 'override' | null — the widget reports which
     settings: await S.getSettings(),
     answers: await S.getAnswers(),
     picks: await S.getPicks(hostname), // this company's remembered dropdown answers
@@ -215,7 +226,7 @@ const handlers = {
     return { ok: true };
   },
 
-  getFillData: (m) => getFillData(m.hostname),
+  getFillData: (m) => getFillData(m.hostname, m.withCredential !== false),
 
   /* ---- Gmail: find the account-activation link ----
    *
