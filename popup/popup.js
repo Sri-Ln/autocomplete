@@ -1,6 +1,9 @@
 /**
  * popup.js — setup, unlock, and editing your saved details.
  *
+ * Opens straight to your details. The passphrase guards only the saved
+ * password, so it is asked for on the Login tab, not in front of everything.
+ *
  * The popup is a trusted context, so it can talk to the service worker directly.
  * It still never handles the encryption key itself: it hands the worker a
  * passphrase or a plaintext password and gets back only booleans and emails.
@@ -62,39 +65,36 @@ function toast(text, kind = 'info') {
   toastTimer = setTimeout(() => (el.hidden = true), 2600);
 }
 
-function showView(name) {
-  for (const v of ['setupView', 'lockedView', 'mainView']) $(v).hidden = v !== name;
-}
-
 /* ------------------------------------------------------------------ */
 /* boot                                                               */
 /* ------------------------------------------------------------------ */
 
 async function boot() {
+  await paintVault();
+  await Promise.all([
+    loadProfile(), loadCredentials(), loadSettings(), loadAnswers(), loadPicks(), loadGmail(),
+  ]);
+}
+
+/**
+ * Lock state touches only the header and the Login tab's form. Kept apart from
+ * boot() so unlocking does not repaint — and wipe — what you are typing on the
+ * other tabs.
+ */
+async function paintVault() {
   const status = await send({ type: 'status' });
 
   $('lockBtn').hidden = !status.unlocked;
   $('headerSub').textContent = !status.configured
-    ? 'Set up to get started'
+    ? 'No login saved yet'
     : status.unlocked
       ? 'Unlocked for this session'
-      : 'Locked';
+      : 'Password locked';
 
-  if (!status.configured) {
-    showView('setupView');
-    $('setupPass').focus();
-    return;
-  }
-  if (!status.unlocked) {
-    showView('lockedView');
-    $('unlockPass').focus();
-    return;
-  }
-
-  showView('mainView');
-  await Promise.all([
-    loadProfile(), loadCredentials(), loadSettings(), loadAnswers(), loadPicks(), loadGmail(),
-  ]);
+  // Only the login form needs the key; everything else is plaintext.
+  $('vaultSetup').hidden = status.configured;
+  $('vaultLocked').hidden = !status.configured || status.unlocked;
+  $('credForm').hidden = !status.unlocked;
 }
 
 /* ------------------------------------------------------------------ */
@@ -111,8 +111,9 @@ $('setupBtn').addEventListener('click', async () => {
   const res = await send({ type: 'setup', passphrase: a });
   if (!res.ok) return toast(res.error ?? 'Setup failed.', 'err');
 
-  toast('Ready.', 'ok');
-  boot();
+  $('setupPass').value = $('setupPass2').value = '';
+  toast('Ready. Now save your login.', 'ok');
+  paintVault();
 });
 
 $('unlockBtn').addEventListener('click', unlock);
@@ -122,12 +123,12 @@ async function unlock() {
   const res = await send({ type: 'unlock', passphrase: $('unlockPass').value });
   if (!res.ok) return toast(res.error ?? 'Wrong passphrase.', 'err');
   $('unlockPass').value = '';
-  boot();
+  paintVault();
 }
 
 $('lockBtn').addEventListener('click', async () => {
   await send({ type: 'lock' });
-  boot();
+  paintVault();
 });
 
 /* ------------------------------------------------------------------ */
@@ -171,6 +172,68 @@ async function loadProfile() {
   for (const key of PROFILE_SEG_FIELDS) setSeg(key, profile[key] || legacy[key]);
   paintVisaCount();
   paintExperience(profile);
+  paintQuick(profile);
+}
+
+/* ------------------------------------------------------------------ */
+/* quick copy                                                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Links and the visa paragraph, one click from opening the popup.
+ *
+ * Painted from what is SAVED, not from the boxes on the other tabs: a chip that
+ * copied a half-typed URL would paste something you never meant to keep.
+ */
+const QUICK_LINKS = [
+  ['linkedin', 'LinkedIn'],
+  ['github', 'GitHub'],
+  ['portfolio', 'Portfolio'],
+  ['other', 'Website'],
+];
+const YES_NO = { yes: 'Yes', no: 'No' };
+
+async function copyText(text, what) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    // Same silent-miss risk as the visa Copy button; fall back to execCommand.
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.append(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    if (!ok) return toast(`Could not copy ${what}.`, 'err');
+  }
+  toast(`${what} copied.`, 'ok');
+}
+
+function paintQuick(profile) {
+  const chips = [];
+  for (const [k, label] of QUICK_LINKS) {
+    const url = profile.websites?.[k]?.trim();
+    if (url) chips.push([label, url, url]);
+  }
+  const visa = profile.visaExplanation?.trim();
+  if (visa) chips.push(['Visa explanation', visa, `${visa.length} characters`]);
+
+  $('quickChips').replaceChildren(...chips.map(([label, text, title]) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'chip';
+    b.textContent = label;
+    b.title = title;
+    b.addEventListener('click', () => copyText(text, label));
+    return b;
+  }));
+
+  const auth = YES_NO[profile.workAuthorized];
+  const sponsor = YES_NO[profile.needsSponsorship];
+  $('quickAuth').textContent = chips.length
+    ? [auth && `Authorized: ${auth}`, sponsor && `Needs sponsorship: ${sponsor}`]
+        .filter(Boolean).join(' · ')
+    : 'Save your links (Experience tab) and visa explanation (Profile tab) to copy them from here.';
 }
 
 /* ------------------------------------------------------------------ */
@@ -257,6 +320,7 @@ function flushVisa() {
       storedProfile = profile;
       visaSaved = text;
       paintVisaCount();
+      paintQuick(profile);
       // Open tabs cache the profile for the pill; tell them it moved.
       await broadcast({ type: 'profileChanged' });
     })
@@ -302,6 +366,7 @@ $('saveProfileBtn').addEventListener('click', async () => {
     storedProfile = profile;
     visaSaved = profile.visaExplanation;
     paintVisaCount(); // clears the "unsaved" marker
+    paintQuick(profile);
     // Open tabs cache the profile for the pill; tell them it moved.
     await broadcast({ type: 'profileChanged' });
   }
@@ -485,6 +550,7 @@ $('saveExperienceBtn').addEventListener('click', async () => {
     storedProfile = fresh.profile;
     paintExperience(fresh.profile);
   }
+  paintQuick(storedProfile);
   await broadcast({ type: 'profileChanged' });
 });
 

@@ -15,45 +15,19 @@
       <button class="ghost" id="lockBtn" hidden>Lock</button>
     </header>
 
-    <!-- ============ FIRST RUN ============ -->
-    <section id="setupView" hidden>
-      <div class="card intro">
-        <h2>Choose a passphrase</h2>
-        <p>
-          This encrypts the passwords you save here. It is never stored anywhere —
-          you type it once after each time you start Chrome, then one-click filling
-          works for the rest of the session.
-        </p>
-      </div>
-
-      <label>Passphrase<input type="password" id="setupPass" autocomplete="new-password" /></label>
-      <label>Confirm<input type="password" id="setupPass2" autocomplete="new-password" /></label>
-      <button class="primary" id="setupBtn">Create</button>
-      <p class="fine">
-        Forget it and you lose only the saved passwords — re-enter them and you're
-        back. Your profile details are untouched.
-      </p>
-    </section>
-
-    <!-- ============ LOCKED ============ -->
-    <section id="lockedView" hidden>
-      <div class="card intro">
-        <h2>Locked</h2>
-        <p>
-          Chrome was restarted, so the key is gone from memory. Enter your
-          passphrase to unlock for this session.
-        </p>
-      </div>
-
-      <label>Passphrase<input type="password" id="unlockPass" autocomplete="off" /></label>
-      <button class="primary" id="unlockBtn">Unlock</button>
-    </section>
-
     <!-- ============ MAIN ============ -->
-    <section id="mainView" hidden>
+    <section id="mainView">
       <button class="primary big" id="fillBtn">
         <span class="bolt">⚡</span> Fill this page
       </button>
+
+      <!-- Copy-on-click for the things pasted by hand most often. Edited on the
+           Experience (links) and Profile (visa) tabs; this only reads them. -->
+      <div class="quick">
+        <div class="divider">Quick copy</div>
+        <div class="chips" id="quickChips"></div>
+        <p class="fine" id="quickAuth"></p>
+      </div>
 
       <nav class="tabs" role="tablist">
         <button class="tab active" data-tab="login" role="tab">Login</button>
@@ -65,12 +39,47 @@
 
       <!-- ---- login ---- -->
       <div class="panel" data-panel="login">
+        <!-- The passphrase guards only the saved password, so it is asked for
+             here and on the Sign In / Create Account pages — nowhere else. -->
+        <div class="card" id="vaultSetup" hidden>
+          <h2>Choose a passphrase</h2>
+          <p>
+            It encrypts the Workday password you save below. It is never stored
+            anywhere. You'll type it once per Chrome session, and only when a
+            Sign In or Create Account page needs the password. Everything else
+            works without it.
+          </p>
+          <div class="stack tight">
+            <label>Passphrase<input type="password" id="setupPass" autocomplete="new-password" /></label>
+            <label>Confirm<input type="password" id="setupPass2" autocomplete="new-password" /></label>
+            <button class="primary" id="setupBtn">Create</button>
+          </div>
+          <p class="fine">
+            Forget it and you lose only the saved password. Re-enter it and
+            you're back. Your profile details are untouched.
+          </p>
+        </div>
+
+        <div class="card" id="vaultLocked" hidden>
+          <h2>Password locked</h2>
+          <p>
+            Chrome was restarted, so the key is gone from memory. Unlock to
+            change your saved login. Sign In and Create Account pages ask for
+            it too, right in the widget.
+          </p>
+          <div class="stack tight">
+            <label>Passphrase<input type="password" id="unlockPass" autocomplete="off" /></label>
+            <button class="primary" id="unlockBtn">Unlock</button>
+          </div>
+        </div>
+
         <p class="fine">
           The default login is used on <b>every</b> Workday tenant, including ones
           you've never visited. Add a host override only if one company forces a
           different password.
         </p>
 
+        <div class="stack" id="credForm">
         <label>Email<input type="email" id="credEmail" autocomplete="off" /></label>
         <label>
           Password
@@ -86,6 +95,7 @@
         </label>
 
         <button class="primary" id="saveCredBtn">Save login</button>
+        </div>
 
         <div class="divider" id="credListLabel">Saved</div>
         <div id="credList" class="list"></div>
@@ -490,7 +500,9 @@
         <p class="fine">
           Saved passwords are encrypted with AES-GCM; the key is derived from your
           passphrase and held in memory only, so it disappears when Chrome closes.
-          Your profile details are stored in plain text. CAPTCHAs are never
+          It is asked for only where the password is filled — Sign In and Create
+          Account. Your profile details are stored in plain text, so everything
+          else fills without it. CAPTCHAs are never
           automated, and a verification link found in Gmail is shown to you,
           never opened.
         </p>

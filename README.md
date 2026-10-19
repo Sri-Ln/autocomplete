@@ -59,13 +59,16 @@ disabled-button check proves nothing. What actually protects you is
 
 1. `chrome://extensions` → enable **Developer mode**
 2. **Load unpacked** → select this folder
-3. Click the extension icon → create a passphrase → save your login
+3. Click the extension icon → **Login** tab → create a passphrase → save your login
 
 ## First-time setup
 
 **Passphrase.** Encrypts your saved passwords. Never stored anywhere — you type it
 once per Chrome session, and the derived key lives in memory-only session storage
-until you close the browser.
+until you close the browser. It is asked for only where the password is filled:
+Sign In and Create Account (pages marked `needsCredential` in the adapter), and
+the Login tab's save form. The popup, My Information, My Experience and the visa
+pill all read plaintext profile data and work while locked.
 
 **Login.** Save one as the **default** and it is used on every Workday tenant, so a
 company you have never applied to fills on the first click. Add a *host override*
@@ -289,7 +292,7 @@ aren't debugging the setter and your selectors at the same time.
 
 ```
 [click widget]
-  ├─ unlock if needed (passphrase → PBKDF2 → key in storage.session)
+  ├─ unlock if the page fills a password (passphrase → PBKDF2 → key in storage.session)
   ├─ registry: which site, which page type?
   ├─ fill each mapped field    (each write isolated; one failure never aborts)
   ├─ two-step page, or autoSubmit off?  → STOP HERE, button becomes "Submit"
