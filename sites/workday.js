@@ -363,6 +363,35 @@ AF.sites.workday = {
       submit: '[data-automation-id="pageFooterNextButton"]',
       errorSelectors: ['[data-automation-id="REPLACE_ME_errorMessage"]'],
     },
+
+    /* ====================================================================
+     * PAGE: Review                                              [ASSUMED]
+     * The last step. Nothing to fill — the footer button is the application's
+     * final Submit, clicked only from the widget's own button (`manualSubmit`,
+     * as on the section pages), never by a fill or the popup.
+     *
+     * No saved Review page, so its root automation id is unknown, and the
+     * first try (apply-flow root + active step ending "Review") missed on a
+     * live one. Either sign now counts: the active step's label is "Review"
+     * (saved pages show "step 6 of 6 Review" for the last step), or the footer
+     * button reads "Submit" — every earlier step's reads "Save and Continue"
+     * or "Next".
+     * ================================================================== */
+    review: {
+      label: 'Review',
+      detect: () => {
+        const squash = (n) => (n?.textContent ?? '').replace(/\s+/g, ' ').trim();
+        const step = squash(document.querySelector('[data-automation-id="progressBarActiveStep"]'));
+        const next = squash(document.querySelector('[data-automation-id="pageFooterNextButton"]'));
+        return /\bReview$/i.test(step) || /^Submit$/i.test(next);
+      },
+      fields: {},
+      sections: {},
+      manualSubmit: '[data-automation-id="pageFooterNextButton"]',
+      fillOptional: true, // nothing to fill, so Submit from the start
+      submitLabel: 'Submit application',
+      hint: 'Check your application above, then press Submit application.',
+    },
   },
 
   /* ======================================================================

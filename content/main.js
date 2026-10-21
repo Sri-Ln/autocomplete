@@ -33,7 +33,8 @@
    * section has appeared. See the "section pages" block below. */
   let sectionRunning = null;
   let sectionState = {};
-  /* Has the main button's fill run on this page? Then it reads "Submit". */
+  /* Has the main button's fill run on this page? Then it reads "Submit".
+   * Not on a `fillOptional` page, whose main button is always Submit. */
   let pageFilled = false;
   let sectionsShown = '';
   /* The widget's "Save skills to profile on Submit" box. Unticked on every new
@@ -249,19 +250,28 @@
       .map(([id]) => id);
   }
 
+  /**
+   * The section buttons. On a `fillOptional` page (My Experience, Review) a
+   * wide "Fill all" joins them, because the main button there is always
+   * Submit: the user may have done the page by hand (#16). Elsewhere "Fill
+   * all" is the main button (see mainLabel), and a page with one section
+   * needs no button of its own: the main button is its Fill.
+   */
   function sectionButtons() {
     const all = ctx.page?.sections ?? {};
     const ids = presentSections();
+    const disabled = !!sectionRunning || busy;
     const buttons = ids.map((id) => ({
       id,
       label: all[id].label,
       state: sectionState[id] ?? null,
       running: sectionRunning === id || (sectionRunning === 'all' && sectionCurrent === id),
-      disabled: !!sectionRunning || busy,
+      disabled,
     }));
-    /* "Fill all" is the main button now (see mainLabel), and a page with one
-     * section needs no button of its own: the main button is its Fill. */
-    return ids.length > 1 ? buttons : [];
+    if (!ctx.page?.fillOptional) return ids.length > 1 ? buttons : [];
+    if (ids.length > 1) buttons.push({ id: 'all', label: 'Fill all', running: sectionRunning === 'all', disabled, wide: true });
+    else if (buttons.length) buttons[0].wide = true;
+    return buttons;
   }
 
   /** What the main button fills: every section, or the page's only one. */
@@ -272,14 +282,16 @@
 
   /**
    * The one main button: "Fill all" / "Fill", then "Submit" once that fill has
-   * run — the user's ask, 2026-10-13. A per-section button on My Experience
-   * re-fills one part and leaves it alone.
+   * run — the user's ask, 2026-10-13. On a `fillOptional` page it is Submit
+   * from the start (#16), or the page's own wording (Review).
    */
   function mainLabel() {
     if (busy) return 'Submitting…';
-    if (sectionRunning === leadSection()) return 'Filling…';
-    if (pageFilled) return 'Submit';
-    return presentSections().length > 1 ? 'Fill all' : 'Fill';
+    if (!ctx.page?.fillOptional) {
+      if (sectionRunning === leadSection()) return 'Filling…';
+      if (!pageFilled) return presentSections().length > 1 ? 'Fill all' : 'Fill';
+    }
+    return ctx.page?.submitLabel ?? 'Submit';
   }
 
   /** Which section "Fill all" is on right now, for its button's spinner. */
@@ -406,12 +418,17 @@
     }
   }
 
-  /** The Submit under the section buttons: settle the page, then click Next once. */
+  /**
+   * The Submit under the section buttons: settle the page, then click Next
+   * once. On Review the same button clicks Workday's final Submit — only from
+   * this press, never from a fill or the popup.
+   */
   async function onSectionSubmit() {
     const sel = ctx.page?.manualSubmit;
     if (!sel || sectionRunning || busy) return;
-    /* Before its fill has run, the main button IS the fill. */
-    if (!pageFilled) return onSection(leadSection());
+    /* Before its fill has run, the main button IS the fill — except on a
+     * `fillOptional` page, where it is always Submit. */
+    if (!ctx.page.fillOptional && !pageFilled) return onSection(leadSection());
     busy = true;
     paint();
     try {
@@ -419,15 +436,19 @@
       document.activeElement?.blur?.();
       await new Promise((r) => setTimeout(r, 250));
 
+      const final = !!ctx.page.submitLabel; // Review: Workday's own Submit
+      const name = final ? 'Submit' : 'Next';
       const btn = document.querySelector(sel);
-      if (!btn || !btn.getClientRects().length) return say('err', "Could not find the page's Next button.");
+      if (!btn || !btn.getClientRects().length) return say('err', `Could not find the page's ${name} button.`);
       if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') {
-        return say('warn', 'Next is disabled — Workday wants something fixed on the page first.');
+        return say('warn', `${name} is disabled — Workday wants something fixed on the page first.`);
       }
       const saved = await learnFromPage();
       const remembered = await rememberQuestions();
       btn.click();
-      say(saved.kind, `Submitted.${saved.text}${remembered} If Workday flags anything, fix it and press Submit again.`);
+      say(saved.kind, final
+        ? 'Application submitted — waiting for Workday to confirm.'
+        : `Submitted.${saved.text}${remembered} If Workday flags anything, fix it and press Submit again.`);
     } finally {
       busy = false;
       paint();
@@ -788,9 +809,10 @@
       });
     }
 
-    /* A section page: one button per section, and no main action at all —
-     * nothing on this page is ever submitted. Ahead of the locked branch
-     * because it reads only the plaintext profile; see onSection(). */
+    /* A section page: fill buttons (optional), then Submit, which only ever
+     * clicks on its own press. Review is one too, with no fill buttons. Ahead
+     * of the locked branch because it reads only the plaintext profile; see
+     * onSection(). */
     if (ctx.page?.sections) {
       return AF.widget.render({
         context,
@@ -805,7 +827,7 @@
           : null,
         message: lastMessage ?? {
           kind: 'info',
-          text: 'Press Fill, check the page, then Submit.',
+          text: ctx.page.hint ?? 'Press Fill, check the page, then Submit.',
         },
       });
     }
@@ -878,6 +900,7 @@
      * whole-page fill and nothing to submit, so it is pointed at the buttons
      * rather than run through doFill — which would find no values() to call. */
     if (ctx.page?.sections) {
+      if (!presentSections().length) return say('info', 'Nothing to fill on this page.');
       return say('info', 'On this page, use the section buttons in the widget — one section at a time.');
     }
 
