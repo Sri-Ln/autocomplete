@@ -1187,6 +1187,11 @@
     /* Read only by the widget's Submit button — see the header. */
     manualSubmit: '[data-automation-id="pageFooterNextButton"]',
 
+    /* Submit is the main button from the start, with "Fill all" beside the
+     * section buttons: the user may have checked the page by hand (#16). */
+    fillOptional: true,
+    hint: 'Fill with the buttons or by hand, check the page, then Submit.',
+
     /**
      * One widget button each. `present()` decides whether the button shows;
      * Websites is the one a tenant may leave out entirely (the Social Network

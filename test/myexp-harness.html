@@ -542,15 +542,25 @@
         await waitUntil(() => secButtons().length, 10000, 'the section buttons');
         check('My Experience is recognised', AF.resolveContext().pageKey, 'myExperience');
         check('it has one button per section, Websites included because the page has it',
-          secLabels(), ['all', 'education', 'languages', 'skills', 'websites']);
-        check('"Fill all" comes first, full width', [secButtons()[0].textContent, secButtons()[0].classList.contains('wide')],
+          secLabels(), ['education', 'languages', 'skills', 'websites', 'all']);
+        check('"Fill all" comes last, full width', [secButtons().at(-1).textContent, secButtons().at(-1).classList.contains('wide')],
           ['Fill all', true]);
+        check('Submit reads Submit before any fill has run (#16)', submitBtn()?.textContent, 'Submit');
         check('and no Fill / Submit main action', mainAction(), null);
         check('the page has no submit selector for a fill to click', 'submit' in AF.sites.workday.pages.myExperience, false);
         check('a Submit button sits under the section buttons, the save-skills box between them',
           [!!submitBtn(), submitBtn()?.previousElementSibling?.id, submitBtn()?.previousElementSibling?.previousElementSibling?.id], [true, 'saveSkillsRow', 'sections']);
         check('the vault is locked, and the buttons work anyway (profile only)',
           secButtons().every((b) => !b.disabled), true);
+
+        /* ---- Submit with no fill at all: the user did the page by hand (#16) ---- */
+        const untouched = JSON.stringify(S());
+        submitBtn().dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true }));
+        await waitUntil(() => window.__nextClicks > 0, 3000, 'Next to be clicked');
+        await sleep(400);
+        check('Submit before any fill clicks Next once and fills nothing',
+          [window.__nextClicks, JSON.stringify(S()) === untouched], [1, true]);
+        window.__nextClicks = 0;
 
         /* ---- Education ---- */
         let msg = await press('education');
@@ -709,7 +719,7 @@
         msg = await press('all');
         check('Fill all: one summary line for every section',
           [/^All sections: /.test(msg), msg.length < 200], [true, true]);
-        check('and each section gets its mark', secButtons().slice(1).every((b) => b.querySelector('.sec-mark')), true);
+        check('and each section gets its mark', secButtons().slice(0, -1).every((b) => b.querySelector('.sec-mark')), true);
         check('Fill all changes nothing already right', S().edu.length, 2);
         check('Fill all never clicks Next', window.__nextClicks, 0);
 
