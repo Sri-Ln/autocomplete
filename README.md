@@ -265,12 +265,13 @@ Chrome's service worker uses, so these exercise the real thing.
 ```
 node test/util.test.mjs       # 13 checks — the debounce and poll every file leans on
 node test/crypto.test.mjs     # 11 checks — key derivation, round-trip, tampering
-node test/vault.test.mjs      # 17 checks — default vs. per-host credential lookup
+node test/vault.test.mjs      # 45 checks — default vs. per-host credential lookup
 node test/match.test.mjs      # 57 checks — the fuzzy option matcher
-node test/questions.test.mjs  # 70 checks — how each question is classified
+node test/questions.test.mjs  # 189 checks — how each question is classified and answered
 node test/free-text.test.mjs  # 11 checks — which fields can hold a paragraph
 node test/widget.test.mjs     # 27 checks — widget positioning arithmetic
 node test/gmail.test.mjs      # 64 checks — which emailed URLs can be shown to you
+node test/experience.test.mjs # 104 checks — matching My Experience entries to the profile
 ```
 
 `vault.test.mjs` is the one that proves the behaviour you actually want: one
@@ -287,6 +288,15 @@ and loads the real `content/react-set.js` — not a copy.
 
 Verify this passes before pointing the extension at a real signup page, so you
 aren't debugging the setter and your selectors at the same time.
+
+### Browser harnesses
+
+Serve the repo (`python -m http.server 8765`) and open these in Chrome. Each
+loads the real content scripts against a React page with synthetic data.
+
+- `test/myexp-harness.html` — My Experience, section by section, and Submit
+- `test/questions-harness.html?page=aq` (or `vd`, `si`) — Application Questions,
+  Voluntary Disclosures and Self Identify
 
 ## How it works
 
@@ -337,6 +347,7 @@ automatically** in the popup's Settings tab does the same thing for every page.
 | `test/myinfo-harness.html` | The whole My Information fill, against a React form. |
 | `test/flow-harness.html` | `main.js` end to end: click → fill → guards → submit, plus the verification screen and the link lookup in the widget. |
 | `test/free-text-harness.html` | Visa question discovery + the live pill, in a real DOM. |
+| `test/questions-harness.html` | The three question pages end to end: Fill, then Submit learning hand answers under `[company]`. `?page=aq`, `vd` or `si`. |
 | `test/guards-harness.html` | The submit-time safety scan. Absent field vs. empty one. |
 | `test/popup-harness.html` | The popup's own storage round-trip, driving the real popup. |
 | `test/crypto.test.mjs` | Key derivation, encryption, tamper detection. |
