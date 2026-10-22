@@ -14,7 +14,7 @@ window.AF = window.AF || {};
 AF.sites = AF.sites || {}; // individual adapters register themselves here
 AF.SITES = AF.SITES || []; // ordered list, built by sites/index.js
 
-AF.VERSION = '0.1.0';
+AF.VERSION = '1.0.0';
 
 /** Set true in the console to get a play-by-play of every field write. */
 AF.debug = false;
