@@ -238,6 +238,33 @@ check('seen count increments',
 check('recallable: "Why do you want to work at our company?"',
   AF.questions.signature('Why do you want to work at our company?').recallable, true);
 
+const sig = (q, company) => AF.questions.signature(q, { company }).signature;
+check('our company -> [company]', sig('Why do you want to work at our company?', ''),
+  'why do you want to work at [company]');
+check('the tenant\'s name -> [company], possessive dropped',
+  sig("Are you comfortable with Acme Bakery's dress code?", 'acmebakery'),
+  'are you comfortable with [company] dress code');
+check('same question at another company, same signature',
+  sig("Are you comfortable with Globex's dress code?", 'globex'),
+  'are you comfortable with [company] dress code');
+check('a slug inside ordinary words is not swapped',
+  sig('Are you authorized to work in the United States and at State Farmhouse?', 'statefarmhouse'),
+  'are you authorized to work in the united states and at [company]');
+
+const learnedAtBakery = AF.questions.remember({}, "Are you comfortable with Acme Bakery's dress code?", 'Yes',
+  { company: 'acmebakery' });
+check('stored under [company]', learnedAtBakery.stored, true);
+const atGlobex = AF.questions.resolve("Are you comfortable with Globex's dress code?",
+  { learned: learnedAtBakery.learned, company: 'globex' });
+check('recalled at another company', [atGlobex.answer, atGlobex.source], ['Yes', 'recalled']);
+
+check('a rule-owned question is never stored',
+  AF.questions.remember({}, 'Will you now or in the future require sponsorship?', 'No', { company: 'globex' }).stored, false);
+check('a self-id answer is never stored',
+  AF.questions.remember({}, 'What is your legal gender?', 'Female', { page: 'voluntaryDisclosures', fieldId: 'gender' }).stored, false);
+check('a sign-off is never stored',
+  AF.questions.remember({}, 'Yes, I have read and consent to the terms and conditions', 'Yes', { widget: 'checkbox' }).stored, false);
+
 /* ================= visa explanation (free text) ================= */
 
 /* A prose answer is wanted only when the question asks for BOTH a visa/work-auth
@@ -361,6 +388,193 @@ check('consent to a background check is still left for you',
   askAs('Do you consent to a background check?', 'listbox').answer, null);
 check('a "Referred by" text box is never answered No',
   askAs('Referred by (name of employee)', 'text').answer === 'No', false);
+
+/* ================= company questions default to No ================= */
+
+const BAKERY = 'Do you currently, or have you previously worked for Acme Bakery or affiliated brands (Bagel Barn, Bean Co, Crumb House)';
+check('affiliated-brands question: none of them -> No', ask(BAKERY).answer, 'No');
+check('names the company, not "or affiliated brands"', ask(BAKERY).reason,
+  '"Acme Bakery" is not in your employment history');
+check('worked at an affiliate -> Yes',
+  ask(BAKERY, { ...PROFILE, employers: ['Bean Co'] }).answer, 'Yes');
+
+check('relatives -> No even with no list at all',
+  ask('Do you have any relatives employed at Vertex Dynamics?', { ...PROFILE, relativesAt: undefined }).answer, 'No');
+
+const PREAMBLE = 'Globex is committed to the highest standards of ethical conduct. '.repeat(6) +
+  'A Public Official includes any officer or employee of a government. ' +
+  'Are you a relative of a current Public Official?';
+check('long preamble: the question is the last sentence',
+  AF.questions.questionCore(PREAMBLE), 'Are you a relative of a current Public Official?');
+check('relative of a public official -> No', [ask(PREAMBLE).answer, ask(PREAMBLE).rule],
+  ['No', 'conflictOfInterest']);
+check('relative of a senior person elsewhere -> No',
+  ask('Are you a relative of a current senior level person or senior commercial person for a company other than Globex? (e.g. CEO, CFO)').answer,
+  'No');
+check('short questions are left whole',
+  AF.questions.questionCore('Are you over 18?*'), 'Are you over 18?');
+
+/* ================= gender is sensitive outside the disclosure pages ================= */
+check('legal gender is sensitive', ask('What is your legal gender?').source, 'sensitive');
+
+/* ================= self-identification: saved answers, disclosure pages only ================= */
+
+const EEO = { ...PROFILE, firstName: 'Testy', lastName: 'McTestface',
+  eeoGender: 'decline', eeoEthnicity: 'decline', eeoHispanic: 'no', eeoVeteran: 'notVeteran', eeoDisability: 'no' };
+const onVD = (q, extra = {}) => AF.questions.resolve(q, { profile: EEO, page: 'voluntaryDisclosures', ...extra });
+
+check('gender on Voluntary Disclosures -> the saved answer',
+  [onVD('What is your legal gender?').answer, onVD('What is your legal gender?').source], ['decline', 'self-id']);
+check('unset leaves it alone',
+  AF.questions.resolve('What is your legal gender?', { profile: { ...EEO, eeoGender: '' }, page: 'voluntaryDisclosures' }).answer, null);
+check('field id wins over a label that mentions disability',
+  onVD('We are a Government contractor … a service-connected disability … protected veterans', { fieldId: 'veteranStatus' }).rule,
+  'eeoVeteran');
+check('disability by field id on Self Identify',
+  AF.questions.resolve('Please check one of the boxes below:', { profile: EEO, page: 'selfIdentify', fieldId: 'disabilityStatus' }).answer,
+  'no');
+check('a Language dropdown on Self Identify is not a self-id question',
+  AF.questions.matchRule('Language', { page: 'selfIdentify', fieldId: 'disabilityForm' }), null);
+
+const pick = (opts, decision) => AF.questions.pickOption(opts, decision);
+const GENDER = ['Male', 'Female', 'I do not wish to self-identify'];
+check('decline finds the decline option', pick(GENDER, onVD('What is your legal gender?')), 2);
+check('decline wording variant', pick(['Asian', 'White', 'I choose not to disclose'],
+  { answer: 'decline', source: 'self-id', rule: 'eeoEthnicity' }), 2);
+const VET = ['I am not a protected veteran', 'I identify as one or more of the classifications of protected veteran', 'I do not wish to self-identify'];
+check('not a veteran', pick(VET, { answer: 'notVeteran', source: 'self-id', rule: 'eeoVeteran' }), 0);
+check('protected veteran never picks the "not" row', pick(VET, { answer: 'protectedVeteran', source: 'self-id', rule: 'eeoVeteran' }), 1);
+check('disability No picks the long No row', pick(
+  ['Yes, I have a disability, or have had one in the past', 'No, I do not have a disability and have not had one in the past', 'I do not want to answer'],
+  { answer: 'no', source: 'self-id', rule: 'eeoDisability' }), 1);
+check('female is not male', pick(GENDER, { answer: 'female', source: 'self-id', rule: 'eeoGender' }), 1);
+
+/* ================= sign-offs ================= */
+
+check('terms checkbox -> ticked', [
+  AF.questions.resolve('Yes, I have read and consent to the terms and conditions', { profile: EEO, widget: 'checkbox' }).answer,
+  AF.questions.resolve('Yes, I have read and consent to the terms and conditions', { profile: EEO, widget: 'checkbox' }).source,
+], ['Yes', 'sign-off']);
+check('signature name', AF.questions.resolve('Enter your name (required) and the name of your agency (if applicable) or N/A.',
+  { profile: EEO, widget: 'text' }).answer, 'Testy McTestface');
+check('Self Identify "Name" box', AF.questions.resolve('Name', { profile: EEO, widget: 'text', page: 'selfIdentify' }).answer,
+  'Testy McTestface');
+check('no name in the profile -> left, with a reason', [
+  AF.questions.resolve('Name', { profile: {}, widget: 'text', page: 'selfIdentify' }).answer,
+  AF.questions.resolve('Name', { profile: {}, widget: 'text', page: 'selfIdentify' }).reason,
+], [null, 'add your first and last name in the popup']);
+check('signature date is today', AF.questions.resolve('Date', {
+  profile: EEO, widget: 'date', page: 'selfIdentify', today: new Date(2026, 9, 12) }).answer, '10/12/2026');
+check('"Name" elsewhere is not a signature', AF.questions.matchRule('Name', { widget: 'text', page: 'applicationQuestions' }), null);
+
+/* ================= follow-ups ================= */
+
+const FOLLOW = 'If yes, what is your relationship with this individual? Enter N/A if not applicable.';
+check('follow-up after a No -> N/A', AF.questions.resolve(FOLLOW, { previous: 'No' }).answer, 'N/A');
+check('follow-up after a Yes -> left', AF.questions.resolve(FOLLOW, { previous: 'Yes' }).answer, null);
+check('N/A finds an N/A option', pick(['Yes', 'No', 'N/A'], { answer: 'N/A', source: 'follow-up' }), 2);
+
+/* ================= expected salary ================= */
+
+check('expected salary -> the saved text',
+  ask('What is your expected salary for the position you are applying for?', { ...PROFILE, expectedSalary: '$100k, negotiable' }).answer,
+  '$100k, negotiable');
+check('salary history is still sensitive', ask('What is your salary history?').source, 'sensitive');
+
+/* ================= picking Yes / No ================= */
+check('Yes picks Yes, not "Yes, but…"', pick(['No', 'Yes', 'Yes, but…'], { answer: 'Yes', source: 'derived' }), 1);
+check('Yes falls back to a "Yes, …" row', pick(['No, never', 'Yes, I have'], { answer: 'Yes', source: 'derived' }), 1);
+check('no option for the answer -> -1', pick(['Maybe'], { answer: 'Yes', source: 'derived' }), -1);
+
+/* ================= review findings, 2026-10-12 ================= */
+
+/* C1: a certification about a legal or protected matter is not a sign-off. */
+const CB = (q, profile = EEO) => AF.questions.resolve(q, { profile, widget: 'checkbox' });
+check('C1: "never convicted" certification is not ticked',
+  CB('I certify that I have never been convicted of a felony.').source, 'sensitive');
+check('C1: disability acknowledgement is not ticked',
+  CB('I acknowledge that I have a disability').source, 'sensitive');
+check('C1: a work-authorisation certification follows the profile field',
+  [CB('I certify that I am legally authorized to work in the US', { ...EEO, workAuthorized: 'no' }).answer,
+   CB('I certify that I am legally authorized to work in the US', { ...EEO, workAuthorized: 'no' }).source],
+  ['No', 'derived']);
+check('C1: a sponsorship certification follows the profile field',
+  CB('I certify that I will not require sponsorship', { ...EEO, needsSponsorship: 'no' }).rule, 'sponsorship');
+
+/* C2: "hispanic" never picks a "(Not Hispanic or Latino)" race. */
+const RACES = ['American Indian or Alaska Native (Not Hispanic or Latino)', 'Asian (Not Hispanic or Latino)',
+  'Black or African American (Not Hispanic or Latino)', 'Hispanic or Latino', 'White (Not Hispanic or Latino)',
+  'I do not wish to self-identify'];
+check('C2: hispanic picks "Hispanic or Latino"', pick(RACES, { answer: 'hispanic', source: 'self-id', rule: 'eeoEthnicity' }), 3);
+check('C2: asian still picks Asian', pick(RACES, { answer: 'asian', source: 'self-id', rule: 'eeoEthnicity' }), 1);
+
+/* I1: other decline wordings. */
+for (const opt of ["I don't wish to answer", 'I don’t wish to answer', 'Not Declared', 'Not Specified', 'Rather not say']) {
+  check(`I1: decline finds "${opt}"`, pick(['Male', 'Female', opt], { answer: 'decline', source: 'self-id', rule: 'eeoGender' }), 2);
+}
+
+/* I2: "not a protected veteran" never claims service the user did not have. */
+check('I2: notVeteran prefers "I am not a veteran" over "a veteran, but not protected"',
+  pick(['I am a veteran, but not a protected veteran', 'I am not a veteran', 'I identify as one or more of the classifications of protected veteran'],
+    { answer: 'notVeteran', source: 'self-id', rule: 'eeoVeteran' }), 1);
+
+/* I3: "worked with X" / "employed by the government" are not employer questions. */
+for (const q of ['Have you worked with Salesforce?', 'Have you worked with children before?',
+  'Have you ever been employed by the federal government?', 'Do you have experience working with Python?',
+  'Have you worked in a fast-paced environment?', 'Do you currently work night shifts?']) {
+  check(`I3: not an employer question: "${q.slice(0, 40)}"`, AF.questions.matchRule(q, {}), null);
+}
+check('I3: and so it can be learned', AF.questions.signature('Have you worked with children before?').recallable, true);
+
+/* I4: whether you applied / interviewed / were referred is per company — never carried over. */
+for (const q of ['Have you applied to Acme Bakery before?', 'Have you interviewed with Globex previously?',
+  'Were you referred by a current Acme Bakery employee?']) {
+  check(`I4: not learned: "${q.slice(0, 40)}"`, AF.questions.remember({}, q, 'Yes', { company: 'acmebakery' }).stored, false);
+}
+
+/* I5: a written "why / explain" answer is never learned. */
+check('I5: "why do you want to work here" text is not learned',
+  AF.questions.remember({}, 'Why do you want to work at Acme Bakery?', 'I love bread.', { company: 'acmebakery', widget: 'text' }).stored, false);
+check('I5: a short factual text answer still is',
+  AF.questions.remember({}, 'How many years of retail experience do you have?', '3', { widget: 'text' }).stored, true);
+
+/* I6: self-id answers never go into a text box. */
+check('I6: no self-id value typed into a text box',
+  AF.questions.resolve('What gender pronouns do you use?', { profile: EEO, page: 'voluntaryDisclosures', widget: 'text' }).answer, null);
+
+/* Found while fixing I7: a relatives question is not about your own employment. */
+const RELATIVES = ask('Do you have any relatives employed at Acme Bakery?');
+check('relatives employed at X -> No, and not by the formerEmployee rule',
+  [RELATIVES.answer, RELATIVES.rule === 'formerEmployee'], ['No', false]);
+
+/* ================= live feedback, 2026-10-13 ================= */
+
+const LIVE = { firstName: 'Testy', lastName: 'McTestface', employers: ['Initech'], eeoVeteran: 'notVeteran' };
+const live = (q, widget = 'listbox') =>
+  AF.questions.resolve(q, { profile: LIVE, page: 'applicationQuestions', widget, company: 'globex' });
+
+check('F1: sponsorship with the switch unset -> No',
+  live('Do you now, or will you in the future, require immigration sponsorship for work authorization?*').answer, 'No');
+check('F1: the switch still wins when set',
+  AF.questions.resolve('Will you require sponsorship?', { profile: { needsSponsorship: 'yes' } }).answer, 'Yes');
+const AGREEMENTS = 'Do you have any agreements with your current or former employer(s) that could potentially prohibit or limit your employment with Globex? This could include agreements such as, but not limited to, the following: non-compete agreement, confidentiality agreement, non-solicitation agreement, invention assignment agreement, employment agreement, or separation agreement. If yes, you may be asked to provide to Globex upon request.*';
+check('F2: restrictive agreements -> No', [live(AGREEMENTS).answer, live(AGREEMENTS).rule], ['No', 'restrictiveAgreement']);
+check('F2: the non-compete wording too',
+  live('Are you currently under a non-compete agreement that would preclude you from accepting the position?').answer, 'No');
+check('F3: 18 or older with the switch unset -> Yes', live('Are you currently 18 years or older?*').answer, 'Yes');
+check('F4: "I verify … truthful and accurate" checkbox -> ticked',
+  [live('I verify that my application submission is truthful and accurate.*', 'checkbox').answer,
+   live('I verify that my application submission is truthful and accurate.*', 'checkbox').source], ['Yes', 'sign-off']);
+const verifyDecision = live('I verify that my application submission is truthful and accurate.*', 'listbox');
+check('F4: as a dropdown, it picks the agree option',
+  pick(['Select One', 'I Agree', 'I Do Not Agree'], verifyDecision), 1);
+check('F4: …or Yes', pick(['No', 'Yes'], verifyDecision), 1);
+const VETQ = 'Please select the veteran status which most accurately describes your status.*';
+check('F5: veteran status on Application Questions uses the saved answer', live(VETQ).source, 'self-id');
+check('F5: "I am not a veteran" is preferred over "not a protected veteran"',
+  pick(['I am not a protected veteran', 'I am not a veteran', 'I identify as one or more of the classifications of protected veteran'], live(VETQ)), 1);
+check('F5: with only "not a protected veteran" on offer, that one',
+  pick(['I am not a protected veteran', 'I identify as one or more of the classifications of protected veteran'], live(VETQ)), 0);
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

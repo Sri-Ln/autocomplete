@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Questions harness</title>
+    <style>
+      body { margin:0; padding:24px; background:#0b0b10; color:#e8e8ee; font:14px/1.5 -apple-system,"Segoe UI",Roboto,sans-serif; }
+      .page { max-width:620px; } label, legend { display:block; font-size:11px; color:#8a8a9c; }
+      fieldset { border:0; padding:0; margin:0 0 10px; }
+      input[type=text], textarea { display:block; width:100%; box-sizing:border-box; margin:3px 0 8px; padding:6px 8px;
+        border-radius:7px; background:#0f0f15; border:1px solid #2c2c38; color:#e8e8ee; }
+      button.trigger { display:block; width:100%; text-align:left; margin:3px 0 8px; padding:6px 8px; border-radius:7px;
+        background:#0f0f15; border:1px solid #2c2c38; color:#e8e8ee; }
+      .popup { position:absolute; z-index:50; width:320px; background:#1d1d26; border:1px solid #44445a;
+        border-radius:8px; padding:4px; margin:0; list-style:none; }
+      .popup [role=option] { padding:5px 8px; cursor:pointer; }
+      .spin { position:relative; display:inline-block; width:64px; height:28px; border:1px solid #2c2c38; }
+      .spin [data-automation-id$=-display] { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; }
+      #verdict.pass { background:#12321f; } #verdict.fail { background:#3a1616; }
+      #verdict { margin:10px 0; padding:11px 13px; border-radius:8px; white-space:pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <h1>Questions harness</h1>
+    <p>?page=aq | vd | si — Application Questions, Voluntary Disclosures, Self Identify. Synthetic data only.</p>
+    <div id="verdict">running…</div>
+    <pre id="out"></pre>
+    <div id="root" class="page"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+
+    <script>
+      /* 1. chrome stub — entirely synthetic. */
+      window.PROFILE = {
+        firstName: 'Testy', lastName: 'McTestface',
+        employers: ['Bean Co', 'Initech'],
+        workAuthorized: 'yes', needsSponsorship: 'no',
+        expectedSalary: '$100,000 - $120,000, negotiable',
+        eeoGender: 'decline', eeoEthnicity: 'decline', eeoHispanic: 'no',
+        eeoVeteran: 'notVeteran', eeoDisability: 'no',
+        education: [], languages: [], skills: [], websites: {},
+      };
+      window.ANSWERS = {};
+      window.__nextClicks = 0;
+      window.__hiddenWrites = [];
+      window.chrome = {
+        runtime: {
+          async sendMessage(msg) {
+            switch (msg?.type) {
+              case 'status': return { configured: true, unlocked: false, settings: { autoSubmit: true, showWidget: true } };
+              case 'getProfile': return { ok: true, profile: window.PROFILE };
+              case 'getAnswers': return { ok: true, answers: window.ANSWERS };
+              case 'saveAnswers': window.ANSWERS = msg.answers; return { ok: true };
+              default: return { ok: true };
+            }
+          },
+          onMessage: { addListener() {} },
+        },
+        storage: {
+          local: { async get() { return {}; }, async set() {} },
+          session: { async get() { return {}; }, async set() {}, async remove() {} },
+        },
+      };
+    </script>
+
+    <script>
+      /* 2. fixtures — Workday's widgets as the saved pages structure them. */
+      const { useState, useRef, useEffect, createElement: h } = React;
+      const PAGE = new URLSearchParams(location.search).get('page') ?? 'aq';
+
+      function useDismiss(open, setOpen) {
+        useEffect(() => {
+          if (!open) return;
+          const onKey = (e) => e.key === 'Escape' && setOpen(false);
+          const onClick = (e) => { if (!e.target?.closest?.('.popup')) setOpen(false); };
+          document.addEventListener('keydown', onKey);
+          document.body.addEventListener('click', onClick);
+          return () => { document.removeEventListener('keydown', onKey); document.body.removeEventListener('click', onClick); };
+        }, [open]);
+      }
+
+      /* The question: Application Questions puts it in a rich-text legend,
+         the disclosure pages in a <label>. Required → an <abbr>*. */
+      const Rich = ({ q, required }) => h('legend', null, h('div', null,
+        h('div', { 'data-automation-id': 'richText' }, h('p', null, h('span', null, q, required && h('abbr', { title: 'required' }, '*'))))));
+      const Label = ({ q, required, htmlFor }) => h('label', { htmlFor }, q, required && h('abbr', { 'aria-hidden': 'true' }, '*'));
+
+      function Select({ f, value, set }) {
+        const [open, setOpen] = useState(false);
+        useDismiss(open, setOpen);
+        const control = [
+          h('button', { key: 'b', type: 'button', className: 'trigger', id: f.id, 'aria-haspopup': 'listbox',
+                        onClick: () => setOpen((o) => !o) }, value || 'Select One'),
+          h('input', { key: 'i', type: 'text', style: { display: 'none' }, value: value ?? '',
+                       onChange: (e) => { window.__hiddenWrites.push(e.target.value); set(e.target.value); } }),
+          open && h('ul', { key: 'p', className: 'popup', role: 'listbox' },
+            ['Select One', ...f.options].map((o) => h('li', { key: o, role: 'option',
+              onClick: () => { set(o === 'Select One' ? '' : o); setOpen(false); } }, o))),
+        ];
+        return f.rich
+          ? h('div', { 'data-automation-id': `formField-${f.id}` }, h('fieldset', null, h(Rich, f), h('div', null, control)))
+          : h('div', { 'data-automation-id': `formField-${f.id}` }, h(Label, { ...f, htmlFor: f.id }), h('div', null, control));
+      }
+
+      function Text({ f, value, set }) {
+        const box = h(f.area ? 'textarea' : 'input', { type: f.area ? undefined : 'text', id: f.id, value: value ?? '',
+          'aria-required': !!f.required, onChange: (e) => set(e.target.value) });
+        return f.rich
+          ? h('div', { 'data-automation-id': `formField-${f.id}` }, h('fieldset', null, h(Rich, f), box))
+          : h('div', { 'data-automation-id': `formField-${f.id}` }, h(Label, { ...f, htmlFor: f.id }), box);
+      }
+
+      function Checkbox({ f, value, set }) {
+        return h('div', { 'data-automation-id': `formField-${f.id}` },
+          h(Label, { ...f, htmlFor: f.id }),
+          h('input', { id: f.id, type: 'checkbox', checked: value === 'Yes', 'aria-required': !!f.required,
+                       onChange: (e) => set(e.target.checked ? 'Yes' : '') }));
+      }
+
+      function Boxes({ f, value, set }) {
+        return h('div', { 'data-automation-id': `formField-${f.id}` }, h('fieldset', null,
+          h('legend', null, h('label', null, f.q)),
+          h('fieldset', { 'data-automation-id': `${f.id}-CheckboxGroup` },
+            f.options.map((o, i) => h('div', { key: o },
+              h('input', { id: `${f.id}-${i}`, type: 'checkbox', checked: value === o,
+                           onChange: (e) => set(e.target.checked ? o : '') }),
+              h('label', { htmlFor: `${f.id}-${i}` }, o))))));
+      }
+
+      function DateField({ f, value, set }) {
+        const refs = { Month: useRef(), Day: useRef(), Year: useRef() };
+        const max = { Month: 12, Day: 31, Year: 9999 };
+        return h('div', { 'data-automation-id': `formField-${f.id}` }, h('fieldset', null,
+          h('legend', null, h('label', null, f.q)),
+          h('div', { 'data-automation-id': 'dateInputWrapper', role: 'group', id: f.id },
+            ['Month', 'Day', 'Year'].map((p) => {
+              const v = value?.[p.toLowerCase()] ?? null;
+              return h('div', { key: p, className: 'spin', onClick: () => refs[p].current.focus() },
+                h('div', { 'data-automation-id': `dateSection${p}-display`, 'aria-hidden': 'true' },
+                  v === null ? p.slice(0, 2).toUpperCase() : String(v)),
+                h('input', { ref: refs[p], 'data-automation-id': `dateSection${p}-input`, role: 'spinbutton',
+                  'aria-label': p, 'aria-valuemin': 1, 'aria-valuemax': max[p], 'aria-valuenow': v ?? undefined, value: v ?? '',
+                  style: { position: 'absolute', left: 0, top: 0, width: '1px', transform: 'scale(0.01)', zIndex: -1000 },
+                  onChange: (e) => {
+                    const n = parseInt(String(e.target.value).slice(0, String(max[p]).length), 10);
+                    set({ ...(value ?? {}), [p.toLowerCase()]: isNaN(n) ? null : Math.min(n, max[p]) });
+                  } }));
+            }))));
+      }
+
+      const PREAMBLE = 'Acme Bakery is committed to the highest standards of ethical conduct in every market. '.repeat(4) +
+        'A Public Official includes any officer or employee of a government. Are you a relative of a current Public Official?';
+      const YN = ['Yes', 'No'];
+      const FIELDS = {
+        aq: [
+          { id: 'q-auth', kind: Select, rich: true, required: true, options: YN, q: 'Are you legally authorized to work in the United States?' },
+          { id: 'q-spons', kind: Select, rich: true, required: true, options: YN, q: 'Will you now or in the future require sponsorship for employment in the United States?' },
+          { id: 'q-former', kind: Select, rich: true, required: true, options: YN, q: 'Do you currently, or have you previously worked for Acme Bakery or affiliated brands (Bagel Barn, Bean Co, Crumb House)' },
+          { id: 'q-noncompete', kind: Select, rich: true, required: true, options: YN, q: 'Are you currently under a non-compete agreement that would preclude you from accepting the position you are applying for?' },
+          { id: 'q-salary', kind: Text, area: true, rich: true, required: true, q: 'What is your expected salary for the position you are applying for?' },
+          { id: 'q-official', kind: Select, rich: true, required: true, options: YN, q: PREAMBLE },
+          { id: 'q-relation', kind: Text, area: true, rich: true, required: true, q: 'If yes, what is your relationship with this individual? Enter N/A if not applicable.' },
+          { id: 'q-name', kind: Text, area: true, rich: true, required: true, q: 'Enter your name (required) and the name of your agency (if applicable) or N/A.' },
+          { id: 'q-guild', kind: Select, rich: true, required: true, options: YN, q: 'Have you ever been a member of the Widget Guild?' },
+          { id: 'q-lift', kind: Select, rich: true, required: true, options: YN, q: 'Are you able to lift 25 pounds?', initial: 'No' },
+          { id: 'q-dress', kind: Select, rich: true, options: YN, q: "Are you comfortable with Acme Bakery's dress code?" },
+          { id: 'q-relatives', kind: Select, rich: true, required: true, options: YN, q: 'Do you have any relatives employed at Acme Bakery?', initial: 'Yes' },
+          { id: 'q-adult', kind: Select, rich: true, required: true, options: YN, q: 'Are you currently 18 years or older?', initial: 'No' },
+          { id: 'q-verify', kind: Select, rich: true, required: true, options: ['I Agree', 'I Do Not Agree'], q: 'I verify that my application submission is truthful and accurate.' },
+        ],
+        vd: [
+          { id: 'gender', kind: Select, options: ['Male', 'Female', 'I do not wish to self-identify'], q: 'What is your legal gender?' },
+          { id: 'ethnicity', kind: Select, options: ['Asian (Not Hispanic or Latino)', 'White (Not Hispanic or Latino)', 'Two or More Races', 'I choose not to disclose'], q: 'What is your race/ethnicity?' },
+          { id: 'hispanicOrLatino', kind: Select, options: ['Yes', 'No', 'I do not wish to self-identify'], q: 'Are you Hispanic/Latino?' },
+          { id: 'veteranStatus', kind: Select, options: ['I am not a protected veteran', 'I identify as one or more of the classifications of protected veteran', 'I do not wish to self-identify'],
+            q: 'We are a Government contractor subject to VEVRAA. A Disabled Veteran is one discharged because of a service-connected disability. Please indicate by checking the appropriate box below.' },
+          { id: 'acceptTermsAndAgreements', kind: Checkbox, required: true, q: 'Yes, I have read and consent to the terms and conditions' },
+        ],
+        si: [
+          { id: 'disabilityForm', kind: Select, options: ['English', 'Spanish'], q: 'Language', initial: 'English' },
+          { id: 'name', kind: Text, q: 'Name' },
+          { id: 'employeeId', kind: Text, q: 'Employee ID (if applicable)' },
+          { id: 'dateSignedOn', kind: DateField, q: 'Date' },
+          { id: 'disabilityStatus', kind: Boxes, q: 'Please check one of the boxes below:',
+            options: ['Yes, I have a disability, or have had one in the past', 'No, I do not have a disability and have not had one in the past', 'I do not want to answer'] },
+        ],
+      }[PAGE];
+      const PAGE_ID = { aq: 'applyFlowPrimaryQuestionsPage', vd: 'applyFlowVoluntaryDisclosuresPage', si: 'applyFlowSelfIdentifyPage' }[PAGE];
+
+      function Page() {
+        const [values, setValues] = useState(() => Object.fromEntries(FIELDS.map((f) => [f.id, f.initial ?? ''])));
+        window.__state = values;
+        window.__set = (id, v) => setValues((s) => ({ ...s, [id]: v }));
+        return h('div', { 'data-automation-id': 'applyFlowPage' },
+          h('div', { 'data-automation-id': PAGE_ID },
+            FIELDS.map((f) => h(f.kind, { key: f.id, f, value: values[f.id], set: (v) => window.__set(f.id, v) }))),
+          h('button', { 'data-automation-id': 'pageFooterNextButton', onClick: () => window.__nextClicks++ }, 'Next'));
+      }
+      ReactDOM.flushSync(() => ReactDOM.createRoot(document.getElementById('root')).render(h(Page)));
+    </script>
+
+    <script type="module">
+      /* 3. the real content scripts, in manifest order. */
+      const ORDER = [
+        '../content/00-namespace.js', '../content/react-set.js', '../content/match.js',
+        '../content/experience.js', '../content/questions.js', '../content/radio-groups.js',
+        '../content/free-text.js', '../content/filler.js', '../content/guards.js',
+        '../sites/workday.js', '../sites/workday-experience.js', '../sites/workday-questions.js',
+        '../sites/index.js', '../content/registry.js', '../content/widget.js', '../content/pill.js',
+      ];
+      const v = Date.now();
+      const load = (src) => new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = `${src}?v=${v}`;
+        s.onload = resolve;
+        s.onerror = () => reject(new Error(`failed to load ${src}`));
+        document.body.append(s);
+      });
+      for (const src of ORDER) await load(src);
+      const realCurrentSite = AF.currentSite;
+      AF.currentSite = (hostname = 'acmebakery.wd5.myworkdayjobs.com') => realCurrentSite(hostname);
+      AF.tenantFromHostname = ((real) => (hostname = 'acmebakery.wd5.myworkdayjobs.com') => real(hostname))(AF.tenantFromHostname);
+      AF.debug = false;
+      await load('../content/main.js');
+
+      /* 4. checks */
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const lines = [];
+      const check = (label, actual, expected) => {
+        const ok = JSON.stringify(actual) === JSON.stringify(expected);
+        lines.push(`${ok ? '  ok  ' : ' FAIL '} ${label}` +
+          (ok ? '' : `\n         got  ${JSON.stringify(actual)}\n         want ${JSON.stringify(expected)}`));
+      };
+      async function waitUntil(fn, ms = 30000, what = 'condition') {
+        const end = Date.now() + ms;
+        for (;;) { const r = fn(); if (r) return r; if (Date.now() > end) throw new Error(`timed out waiting for ${what}`); await sleep(50); }
+      }
+      const shadow = () => document.getElementById('af-widget-host')?.shadowRoot;
+      const secButtons = () => [...(shadow()?.querySelectorAll('#sections button') ?? [])];
+      const widgetMsg = () => shadow()?.getElementById('msg')?.textContent ?? '';
+      const mainBtn = () => shadow()?.getElementById('secSubmit');
+      /* One button: "Fill", which becomes "Submit" once the fill is done. */
+      async function press() {
+        check('the one button reads "Fill" before filling', mainBtn()?.textContent, 'Fill');
+        check('and there is no separate section button', secButtons().length, 0);
+        mainBtn().dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true }));
+        await waitUntil(() => mainBtn()?.textContent === 'Submit', 60000, 'the fill to finish');
+        await sleep(150);
+        return widgetMsg();
+      }
+      const S = () => window.__state;
+      const today = new Date();
+
+      try {
+        await waitUntil(() => shadow()?.getElementById('secSubmit')?.textContent, 10000, 'the widget');
+        const key = { aq: 'applicationQuestions', vd: 'voluntaryDisclosures', si: 'selfIdentify' }[PAGE];
+        check('the page is recognised', AF.resolveContext().pageKey, key);
+
+        if (PAGE === 'aq') {
+          /* A hand answer from another company, learned with [company]. */
+          window.ANSWERS = {
+            [AF.questions.signature(FIELDS_TEXT('q-noncompete'), { company: 'globex' }).signature]: { answer: 'No', seen: 1 },
+            [AF.questions.signature('Are you able to lift 25 pounds?', { company: 'globex' }).signature]: { answer: 'Yes', seen: 1 },
+          };
+          const msg = await press('questions');
+          check('work authorization', S()['q-auth'], 'Yes');
+          check('sponsorship', S()['q-spons'], 'No');
+          check('worked at an affiliated brand -> Yes', S()['q-former'], 'Yes');
+          check('non-compete recalled from another company', S()['q-noncompete'], 'No');
+          check('expected salary', S()['q-salary'], window.PROFILE.expectedSalary);
+          check('relative of an official (long preamble) -> No', S()['q-official'], 'No');
+          check('its follow-up -> N/A', S()['q-relation'], 'N/A');
+          check('signature name', S()['q-name'], 'Testy McTestface');
+          check('an unknown required question is left…', S()['q-guild'], '');
+          check('…and named under Needs you', /Widget Guild/.test(msg), true);
+          check('a hand answer already there is not overwritten by a learned one', S()['q-lift'], 'No');
+          check('two signed (name, verification)', /2 signed/.test(msg), true);
+          check('a hand answer is not flipped by a default No', S()['q-relatives'], 'Yes');
+          check('a hand answer is not flipped by a default when the switch is unset', S()['q-adult'], 'No');
+          check('a "truthful and accurate" dropdown -> I Agree', S()['q-verify'], 'I Agree');
+          check('no popup left open', AF.sites.workday.visiblePopups().length, 0);
+          check('no hidden-input writes', window.__hiddenWrites, []);
+
+          /* Submit learns the hand answer, with the company swapped. */
+          window.__set('q-dress', 'Yes');
+          window.__set('q-guild', 'No');
+          await sleep(100);
+          shadow().getElementById('secSubmit').dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true }));
+          await waitUntil(() => window.__nextClicks > 0, 5000, 'Next to be clicked');
+          check('Submit clicked Next once', window.__nextClicks, 1);
+          check('the dress-code answer is learned under [company]',
+            window.ANSWERS['are you comfortable with [company] dress code']?.answer, 'Yes');
+          check('the Widget Guild answer is learned',
+            window.ANSWERS['have you ever been a member of the widget guild']?.answer, 'No');
+          check('a rule-owned answer is not learned',
+            Object.keys(window.ANSWERS).some((k) => /sponsorship/.test(k)), false);
+        }
+
+        if (PAGE === 'vd') {
+          const msg = await press('questions');
+          check('gender -> decline', S().gender, 'I do not wish to self-identify');
+          check('ethnicity -> this tenant\'s decline wording', S().ethnicity, 'I choose not to disclose');
+          check('Hispanic -> No', S().hispanicOrLatino, 'No');
+          check('veteran by field id, not the label\'s "disability"', S().veteranStatus, 'I am not a protected veteran');
+          check('terms ticked', S().acceptTermsAndAgreements, 'Yes');
+          check('reported as signed', /1 signed/.test(msg), true);
+        }
+
+        if (PAGE === 'si') {
+          const msg = await press('questions');
+          check('the language dropdown is left as it was', S().disabilityForm, 'English');
+          check('name', S().name, 'Testy McTestface');
+          check('employee id left blank', S().employeeId, '');
+          check('an optional blank field is not under Needs you', /Employee ID/.test(msg), false);
+          check('date signed is today', S().dateSignedOn,
+            { month: today.getMonth() + 1, day: today.getDate(), year: today.getFullYear() });
+          check('disability -> the No box', S().disabilityStatus, 'No, I do not have a disability and have not had one in the past');
+          check('two signed (name and date)', /2 signed/.test(msg), true);
+        }
+      } catch (err) {
+        lines.push(` FAIL  threw: ${err?.message ?? err}`);
+      }
+
+      function FIELDS_TEXT(id) {
+        return document.querySelector(`[data-automation-id="formField-${id}"] [data-automation-id="richText"]`).textContent.replace(/\*$/, '');
+      }
+
+      const passed = lines.filter((l) => l.startsWith('  ok')).length;
+      const failed = lines.filter((l) => l.startsWith(' FAIL')).length;
+      document.getElementById('out').textContent = lines.join('\n');
+      const verdict = document.getElementById('verdict');
+      verdict.className = failed ? 'fail' : 'pass';
+      verdict.textContent = `${passed} passed, ${failed} failed`;
+      window.__lines = lines;
+    </script>
+  </body>
+</html>
