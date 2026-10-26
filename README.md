@@ -61,6 +61,24 @@ disabled-button check proves nothing. What actually protects you is
 2. **Load unpacked** → select this folder
 3. Click the extension icon → **Login** tab → create a passphrase → save your login
 
+### Day to day: let Chrome load its own folder
+
+Loading this checkout directly means Chrome runs whatever branch is checked out,
+half-finished edits included. `tools/sync-extension.mjs` keeps a separate folder,
+a git worktree pinned to `origin/main`, and writes your local-only settings into
+it after every checkout:
+
+1. `node tools/sync-extension.mjs --new-key`: once. It prints a `key` and the
+   extension ID it pins, and writes the private half to `extension.local.pem`.
+2. Create `extension.local.json` (gitignored) with `dir`, `clientId`, that `key`
+   and `"debug": true` if you want the console log. The shape is at the top of
+   the script.
+3. `node tools/sync-extension.mjs`, then **Load unpacked** → that `dir`.
+
+After each merge, run step 3's command again and reload the extension. It
+refuses to touch the folder if anything there was edited by hand. Pass a tag or
+branch to try something other than main: `node tools/sync-extension.mjs v1.0.0`.
+
 ## First-time setup
 
 **Passphrase.** Encrypts your saved passwords. Never stored anywhere — you type it

@@ -1,0 +1,33 @@
+# Runs every Node test file on each pull request and on main.
+# No install step: the tests use only Node built-ins (see README → Tests).
+# The browser harnesses in test/*.html are run by hand; this covers the rest.
+name: tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  node:
+    name: node tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Every file runs even after a failure, so one run shows all of them.
+      - name: node test/*.test.mjs
+        run: |
+          status=0
+          for f in test/*.test.mjs; do
+            echo "::group::$f"
+            node "$f" || { status=1; echo "::error file=$f::$f failed"; }
+            echo "::endgroup::"
+          done
+          exit $status

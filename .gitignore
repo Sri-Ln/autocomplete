@@ -42,5 +42,11 @@ desktop.ini
 # The popup's Export: a copy of the profile.
 /backup/
 
+# ── The folder Chrome loads ──────────────────────────────────────────
+# tools/sync-extension.mjs reads these. The OAuth client ID and the key that
+# pins the extension ID are yours alone; the .pem is the private half.
+/extension.local.json
+/extension.local.pem
+
 # ── Claude Code local state ──────────────────────────────────────────
 /.claude/
