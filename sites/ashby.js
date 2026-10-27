@@ -5,8 +5,8 @@
  * answers it from the profile and learned answers, the way the Workday question
  * pages do. The final submit is only ever pressed by the user, from the widget.
  *
- * Reading the form and filling it are added in later steps; until then the
- * page reports nothing filled and learns nothing.
+ * Fill never presses Ashby's submit button and never touches a file input or
+ * the autofill uploader: the résumé is attached by the user.
  */
 (() => {
   const SUBMIT = 'button.ashby-application-form-submit-button';
@@ -107,13 +107,225 @@
     }
   }
 
-  async function fillPage() {
-    return { section: 'Application', filled: [], replaced: [], already: [], kept: [], left: [],
-             failed: [], signed: [], added: 0, note: '' };
+  /* ------------------------------------------------------------------ */
+  /* filling                                                            */
+  /* ------------------------------------------------------------------ */
+
+  const Q = AF.questions;
+  const clip = (s) => (s.length > 60 ? `${s.slice(0, 57)}…` : s);
+  const norm = (s) => AF.normalizeText(s);
+
+  /* Standard fields come from the profile and replace a differing value. Each
+   * row matches only text inputs (the location row only the location widget),
+   * so a yes/no "May we email you?" is never handed an address. */
+  const STANDARD = [
+    { widget: 'text', test: (f) => f.fieldId === '_systemfield_name' || /^(full |legal )?name$/i.test(f.question),
+      value: (p) => [p.firstName, p.lastName].map((x) => String(x ?? '').trim()).filter(Boolean).join(' ') },
+    { widget: 'text', test: (f) => /first name|^preferred name$/i.test(f.question), value: (p) => p.firstName },
+    { widget: 'text', test: (f) => /last name|surname/i.test(f.question), value: (p) => p.lastName },
+    { widget: 'text', test: (f) => f.fieldId === '_systemfield_email' || /e-?mail/i.test(f.question), value: (p) => p.email },
+    { widget: 'text', test: (f) => !!f.wrap.querySelector('input[type="tel"]') || /phone/i.test(f.question), value: (p) => p.phone },
+    { widget: 'text', test: (f) => /linkedin/i.test(f.question), value: (p) => p.websites?.linkedin },
+    { widget: 'text', test: (f) => /github/i.test(f.question), value: (p) => p.websites?.github },
+    { widget: 'text', test: (f) => /website|portfolio|personal site/i.test(f.question), value: (p) => p.websites?.portfolio },
+    { widget: 'location', test: () => true,
+      value: (p) => [p.city, p.state].map((x) => String(x ?? '').trim()).filter(Boolean).join(', ') },
+  ];
+
+  /* Answers from a field the user set — the only ones allowed to replace what
+   * is on the page (the same rule as sites/workday-questions.js). A default No,
+   * a follow-up N/A, a sign-off or a remembered answer never overrides a hand
+   * answer. */
+  const PROFILE_RULES = {
+    workAuthorization: 'workAuthorized',
+    sponsorship: ['needsSponsorshipNow', 'needsSponsorshipFuture', 'needsSponsorship'],
+    over18: 'over18', formerEmployee: 'employers',
+  };
+  const isSet = (v) => (Array.isArray(v) ? v.length > 0 : String(v ?? '').trim() !== '');
+  const fromProfile = (d, profile) =>
+    d.source === 'preference' || d.source === 'self-id' ||
+    (d.source === 'derived' && d.rule in PROFILE_RULES &&
+      [].concat(PROFILE_RULES[d.rule]).some((k) => isSet(profile?.[k])));
+
+  async function loadAnswers() {
+    try {
+      const res = await chrome.runtime.sendMessage({ type: 'getAnswers' });
+      return res?.ok ? res.answers ?? {} : {};
+    } catch {
+      return {};
+    }
   }
 
+  /** The radios or checkboxes of a choice/checkbox field, with their labels. */
+  function choices(wrap) {
+    return [...wrap.querySelectorAll('input[type="radio"], input[type="checkbox"]')]
+      .map((input) => ({ input, label: optionLabel(input) }));
+  }
+
+  /** Click one option the way a person does: its label, else the input. */
+  function clickOption(input) {
+    const label = (input.id ? document.querySelector(`label[for="${CSS.escape(input.id)}"]`) : null) ?? input.closest('label');
+    (label ?? input).click();
+  }
+
+  async function fillYesNo(f, decision, label, report) {
+    const i = Q.pickOption(['Yes', 'No'], decision);
+    if (i < 0) { report.left.push(`${label} — "${decision.answer}" is not Yes or No`); return false; }
+    const button = f.wrap.querySelector(`button[data-option="${i === 0 ? 'yes' : 'no'}"]`);
+    button?.click();
+    if (!(await AF.waitFor(() => button?.getAttribute('aria-pressed') === 'true', 1000))) {
+      report.failed.push(`${label} — the button did not take`);
+      return false;
+    }
+    return true;
+  }
+
+  async function fillChoice(f, decision, label, report) {
+    const list = choices(f.wrap);
+    const i = Q.pickOption(list.map((c) => c.label), decision);
+    if (i < 0) { report.left.push(`${label} — "${decision.answer}" is not one of the options`); return false; }
+    clickOption(list[i].input);
+    if (!(await AF.waitFor(() => list[i].input.checked, 1000))) {
+      report.failed.push(`${label} — "${list[i].label}" did not take`);
+      return false;
+    }
+    return true;
+  }
+
+  /** A date input is a React date picker: type the date, Enter commits it. */
+  async function fillDate(f, decision, label, report) {
+    const input = f.wrap.querySelector('.ashby-application-form-input-date');
+    AF.setNativeValue(input, decision.answer, { blur: false });
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
+    input.blur();
+    await new Promise((r) => setTimeout(r, 50));
+    if (input.value !== decision.answer) {
+      report.failed.push(`${label} — the date did not stay`);
+      return false;
+    }
+    return true;
+  }
+
+  /** The listbox a combobox controls, else the nearest one around it. */
+  function listboxFor(input, wrap) {
+    const id = input.getAttribute('aria-controls');
+    const byId = id ? document.getElementById(id) : null;
+    if (byId) return byId;
+    for (let el = input.parentElement; el; el = el.parentElement) {
+      const box = el.querySelector('[role="listbox"]');
+      if (box) return box;
+      if (el === wrap) break;
+    }
+    return null;
+  }
+
+  /** Type the city, wait for the typeahead, take the first option that names it. */
+  async function fillLocation(f, text, report) {
+    const input = f.wrap.querySelector('input[role="combobox"]');
+    const city = norm(text.split(',')[0]);
+    AF.setNativeValue(input, text, { blur: false });
+    const option = await AF.waitFor(() => {
+      const box = listboxFor(input, f.wrap);
+      return [...(box?.querySelectorAll('[role="option"]') ?? [])].find((o) => norm(o.textContent).includes(city));
+    }, 3000);
+    if (option) {
+      option.click();
+      if (await AF.waitFor(() => input.value && input.getAttribute('aria-expanded') !== 'true', 1000)) return true;
+    }
+    AF.setNativeValue(input, '', { blur: false });
+    report.left.push('Location — pick it yourself');
+    return false;
+  }
+
+  /** Put one answer on the page → true when it took (reported otherwise). */
+  function drive(f, text, decision, label, report) {
+    switch (f.widget) {
+      case 'text': {
+        const input = f.wrap.querySelector(TEXT_INPUT);
+        if (AF.setNativeValue(input, text)) return true;
+        report.failed.push(`${label} — the page rejected the write`);
+        return false;
+      }
+      case 'location': return fillLocation(f, text, report);
+      case 'yesno': return fillYesNo(f, decision, label, report);
+      case 'choice':
+      case 'checkbox': return fillChoice(f, decision, label, report);
+      case 'date': return fillDate(f, decision, label, report);
+    }
+    return false;
+  }
+
+  /**
+   * Answer every question on the page.
+   *
+   * Left alone: a field already answered, unless the answer comes from the
+   * profile (standard fields, or a rule fromProfile accepts); a ticked box or
+   * chosen option is never changed. A question that cannot be answered is listed
+   * only if required.
+   */
+  async function fillPage({ profile }) {
+    const report = { section: 'Application', filled: [], replaced: [], already: [], kept: [],
+                     left: [], failed: [], signed: [], added: 0, note: '' };
+    const fields = readFields();
+    if (!fields.length) {
+      report.note = 'no questions found on this page';
+      return report;
+    }
+    const ctx = { profile, learned: await loadAnswers(), company: AF.currentCompany(), selfId: true, today: new Date() };
+
+    let previous = null;
+    for (const f of fields) {
+      const label = clip(Q.questionCore(f.question));
+      const current = currentValue(f);
+
+      if (f.widget === 'file') {
+        if (f.required && !current) report.left.push(`${label} — attach it yourself`);
+        continue;
+      }
+
+      const row = STANDARD.find((r) => r.widget === f.widget && r.test(f));
+      let done = false;
+      if (row) {
+        const value = String(row.value(profile) ?? '').trim();
+        if (!value) {
+          if (current) report.already.push(label);
+          else if (f.required) report.left.push(`${label} — not in your profile`);
+        } else if (current === value || (f.widget === 'location' && current)) {
+          report.already.push(label);
+        } else if (await drive(f, value, null, label, report)) {
+          report.filled.push(label);
+          if (current) report.replaced.push(`${label} ("${current}")`);
+          done = true;
+        }
+        previous = (done ? value : current) || null;
+        continue;
+      }
+
+      const decision = Q.resolve(f.question, { ...ctx, previous, widget: f.widget === 'yesno' ? 'choice' : f.widget, fieldId: f.fieldId });
+      if (!decision.answer) {
+        if (current) report.already.push(label);
+        else if (f.required) report.left.push(`${label} — ${decision.reason}`);
+      } else if (current && (!fromProfile(decision, profile) || f.widget === 'choice' || f.widget === 'checkbox')) {
+        report.already.push(label);
+      } else if (await drive(f, decision.answer, decision, label, report)) {
+        done = true;
+        if (decision.source === 'sign-off') report.signed.push(label);
+        else report.filled.push(label);
+        if (current) report.replaced.push(`${label} ("${current}")`);
+      }
+      previous = (done ? decision.answer : current) || null;
+    }
+    return report;
+  }
+
+  /** The page's answers as the user leaves it, for remember() at Submit. Not
+   *  standard fields, files, dates or locations: those are the profile's. */
   function readAnswers() {
-    return [];
+    return readFields()
+      .filter((f) => !['file', 'date', 'location'].includes(f.widget) &&
+        !(f.widget === 'text' && STANDARD.some((r) => r.widget === 'text' && r.test(f))))
+      .map((f) => ({ question: f.question, answer: currentValue(f), widget: f.widget, fieldId: f.fieldId }))
+      .filter((a) => a.answer);
   }
 
   AF.sites.ashby = {
