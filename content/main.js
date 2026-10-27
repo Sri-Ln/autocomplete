@@ -420,7 +420,7 @@
 
   /**
    * The Submit under the section buttons: settle the page, then click Next
-   * once. On Review the same button clicks Workday's final Submit — only from
+   * once. On Review the same button clicks the site's final Submit — only from
    * this press, never from a fill or the popup.
    */
   async function onSectionSubmit() {
@@ -432,23 +432,23 @@
     busy = true;
     paint();
     try {
-      await AF.sites.workday.closePopup();
+      await ctx.site?.closePopup?.();
       document.activeElement?.blur?.();
       await new Promise((r) => setTimeout(r, 250));
 
-      const final = !!ctx.page.submitLabel; // Review: Workday's own Submit
+      const final = !!ctx.page.submitLabel; // Review: the site's own Submit
       const name = final ? 'Submit' : 'Next';
       const btn = document.querySelector(sel);
       if (!btn || !btn.getClientRects().length) return say('err', `Could not find the page's ${name} button.`);
       if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') {
-        return say('warn', `${name} is disabled — Workday wants something fixed on the page first.`);
+        return say('warn', `${name} is disabled — ${ctx.site.label} wants something fixed on the page first.`);
       }
       const saved = await learnFromPage();
       const remembered = await rememberQuestions();
       btn.click();
       say(saved.kind, final
-        ? 'Application submitted — waiting for Workday to confirm.'
-        : `Submitted.${saved.text}${remembered} If Workday flags anything, fix it and press Submit again.`);
+        ? `Application submitted — waiting for ${ctx.site.label} to confirm.`
+        : `Submitted.${saved.text}${remembered} If ${ctx.site.label} flags anything, fix it and press Submit again.`);
     } finally {
       busy = false;
       paint();

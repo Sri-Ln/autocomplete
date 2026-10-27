@@ -22,9 +22,9 @@ const SK_KEY = 'af_session_key'; // raw AES key, base64, memory only
 
 /**
  * Profile = the non-secret stuff that is identical on every site.
- * NOTE: `email` is NOT here. Email is half of a login credential, so it lives in
- * the vault next to its password. One source of truth. The myInformation page
- * pulls the email from whichever credential matched.
+ * NOTE: the login email lives in the vault next to its password, and the
+ * myInformation page pulls it from whichever credential matched. `email` here is
+ * only for sites that ask for it without a login.
  */
 export const EMPTY_PROFILE = {
   firstName: '',

@@ -1039,7 +1039,9 @@ $('showWidget').addEventListener('change', async (e) => {
 
 /** Tell any open content scripts that settings moved. Failures are fine. */
 async function broadcast(msg) {
-  const tabs = await chrome.tabs.query({ url: 'https://*.myworkdayjobs.com/*' });
+  const tabs = await chrome.tabs.query({
+    url: chrome.runtime.getManifest().content_scripts.flatMap((c) => c.matches),
+  });
   await Promise.all(
     tabs.map((t) => chrome.tabs.sendMessage(t.id, msg).catch(() => {}))
   );
