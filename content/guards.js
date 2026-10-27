@@ -169,7 +169,7 @@ AF.guards = {
       `Not submitting — ${orphans.length} required field(s) still empty: ` +
       `${orphans.join(' · ')}. ` +
       `If these should be filled automatically, harvest their data-automation-id ` +
-      `into the site adapter in content/sites/; otherwise fill them by hand and click again.`
+      `into the site adapter in sites/; otherwise fill them by hand and click again.`
     );
   },
 
@@ -196,11 +196,11 @@ AF.guards = {
   /** A disabled submit button means the site isn't satisfied yet. */
   submitReady(submitSelector) {
     if (AF.isPlaceholder(submitSelector)) {
-      return 'Submit selector is still a placeholder — nothing to click. See the site adapter in content/sites/.';
+      return 'Submit selector is still a placeholder — nothing to click. See the site adapter in sites/.';
     }
 
     const btn = document.querySelector(submitSelector);
-    if (!btn) return 'Submit button not found — check the selector in the site adapter in content/sites/.';
+    if (!btn) return 'Submit button not found — check the selector in the site adapter in sites/.';
     if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') {
       return 'Not submitting — the submit button is still disabled.';
     }
