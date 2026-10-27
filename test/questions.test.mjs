@@ -612,5 +612,15 @@ check('pronounce is not the pronoun question', AF.questions.isSensitive('How do 
   [AF.currentCompany, AF.tenantFromHostname] = keep;
 }
 
+/* Age as a number is as protected as an age range. */
+for (const q of ['What is your current age?', 'What is your age?']) {
+  check(`sensitive: ${q}`, AF.questions.isSensitive(q), true);
+  check(`left blank: ${q}`, AF.questions.resolve(q, { profile: PROFILE, learned: {}, widget: 'text' }).answer, null);
+  check(`not recallable: ${q}`, AF.questions.remember({}, q, '30', { widget: 'text' }).stored, false);
+}
+for (const q of ['What stage are you at?', 'Expected wage?', 'Which agency referred you?',
+                 'What is your average response time?', 'Please share your page URL.'])
+  check(`not age: ${q}`, AF.questions.isSensitive(q), false);
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

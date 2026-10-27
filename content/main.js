@@ -447,7 +447,7 @@
       const remembered = await rememberQuestions();
       btn.click();
       say(saved.kind, final
-        ? `Application submitted — waiting for ${ctx.site.label} to confirm.`
+        ? `Application submitted — waiting for ${ctx.site.label} to confirm.${remembered}`
         : `Submitted.${saved.text}${remembered} If ${ctx.site.label} flags anything, fix it and press Submit again.`);
     } finally {
       busy = false;
@@ -854,7 +854,7 @@
         actionLabel: null,
         message: lastMessage ?? {
           kind: 'info',
-          text: 'Waiting for a Create Account or My Information form.',
+          text: 'Waiting for an application form.',
         },
       });
     }
@@ -901,7 +901,7 @@
      * rather than run through doFill — which would find no values() to call. */
     if (ctx.page?.sections) {
       if (!presentSections().length) return say('info', 'Nothing to fill on this page.');
-      return say('info', 'On this page, use the section buttons in the widget — one section at a time.');
+      return say('info', 'On this page, use the buttons in the widget on the page.');
     }
 
     if (busy) return;

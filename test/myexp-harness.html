@@ -710,7 +710,7 @@
         await new Promise((resolve) => window.__onMessage({ type: 'fillNow' }, {}, resolve));
         await sleep(100);
         check('the popup\'s "Fill this page" points at the buttons instead',
-          /use the section buttons/.test(widgetMsg()), true);
+          /use the buttons in the widget/.test(widgetMsg()), true);
         check('and fills nothing, asks for no fill data', [JSON.stringify(S()) === before,
           window.__sent.some((m) => m.type === 'getFillData')], [true, false]);
         check('Next still never clicked', window.__nextClicks, 0);

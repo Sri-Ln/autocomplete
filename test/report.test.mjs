@@ -18,4 +18,5 @@ check('summary line', AF.describeReport({ section: 'Questions', filled: ['a', 'b
 check('note only', AF.describeReport({ section: 'X', filled: [], already: [], failed: [], left: [], kept: [], note: 'no questions found on this page' }),
   { kind: 'info', text: 'X: no questions found on this page' });
 
+console.log(failed ? `${failed} failed` : 'all passed');
 if (failed) process.exit(1);

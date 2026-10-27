@@ -123,12 +123,12 @@
       value: (p) => [p.firstName, p.lastName].map((x) => String(x ?? '').trim()).filter(Boolean).join(' ') },
     { widget: 'text', test: (f) => /first name|^preferred name$/i.test(f.question), value: (p) => p.firstName },
     { widget: 'text', test: (f) => /last name|surname/i.test(f.question), value: (p) => p.lastName },
-    { widget: 'text', test: (f) => f.fieldId === '_systemfield_email' || /e-?mail/i.test(f.question), value: (p) => p.email },
-    { widget: 'text', test: (f) => !!f.wrap.querySelector('input[type="tel"]') || /phone/i.test(f.question), value: (p) => p.phone },
-    { widget: 'text', test: (f) => /linkedin/i.test(f.question), value: (p) => p.websites?.linkedin },
-    { widget: 'text', test: (f) => /github/i.test(f.question), value: (p) => p.websites?.github },
-    { widget: 'text', test: (f) => /website|portfolio|personal site/i.test(f.question), value: (p) => p.websites?.portfolio },
-    { widget: 'location', test: () => true,
+    { widget: 'text', test: (f) => f.fieldId === '_systemfield_email' || /^e-?mail( address)?$/i.test(f.question), value: (p) => p.email },
+    { widget: 'text', test: (f) => !!f.wrap.querySelector('input[type="tel"]') || /^((mobile|cell) )?phone( number)?$/i.test(f.question), value: (p) => p.phone },
+    { widget: 'text', test: (f) => /^linkedin( (profile|url))?( url)?$/i.test(f.question), value: (p) => p.websites?.linkedin },
+    { widget: 'text', test: (f) => /^github( (profile|url))?$/i.test(f.question), value: (p) => p.websites?.github },
+    { widget: 'text', test: (f) => /^(personal )?(website|portfolio|site)( ?\/ ?(website|portfolio))?( url)?$/i.test(f.question), value: (p) => p.websites?.portfolio },
+    { widget: 'location', test: (f) => f.fieldId === '_systemfield_location' || /^(current )?location$|where are you (currently )?(located|based)|city/i.test(f.question),
       value: (p) => [p.city, p.state].map((x) => String(x ?? '').trim()).filter(Boolean).join(', ') },
   ];
 
@@ -285,7 +285,7 @@
       const current = currentValue(f);
 
       if (f.widget === 'file') {
-        if (f.required && !current) report.left.push(`${label} — attach it yourself`);
+        if (!current) report.left.push(`${label} — attach it yourself`);
         continue;
       }
 
@@ -333,7 +333,7 @@
     return readFields()
       .filter((f) => !['file', 'date', 'location'].includes(f.widget) &&
         !(f.widget === 'text' && STANDARD.some((r) => r.widget === 'text' && r.test(f))))
-      .map((f) => ({ question: f.question, answer: currentValue(f), widget: f.widget, fieldId: f.fieldId }))
+      .map((f) => ({ question: f.question, answer: currentValue(f), widget: f.widget === 'yesno' ? 'choice' : f.widget, fieldId: f.fieldId }))
       .filter((a) => a.answer);
   }
 

@@ -265,6 +265,35 @@
         const learn = form.readAnswers();
         check('readAnswers has only the hand answer', learn.map((a) => [a.fieldId, a.question, a.answer, a.widget]),
           [['hear-1', 'How did you hear about us?', 'Job board', 'choice']]);
+
+        /* a pressed yes/no is learned as a choice, so sign-off yes/no is refused */
+        click('[data-field-path="office-1"] button[data-option="yes"]');
+        check('readAnswers yes/no entry has widget choice',
+          form.readAnswers().find((a) => a.fieldId === 'office-1')?.widget, 'choice');
+
+        /* long questions that merely mention an email, LinkedIn or a website are not profile rows */
+        reset();
+        const root = document.querySelector('.ashby-application-form-container');
+        const extra = document.createElement('div');
+        const textField = (id, title) => `<div class="ashby-application-form-field-entry" data-field-path="${id}"><label class="_h _l ashby-application-form-question-title" for="${id}">${title}</label><input type="text" id="${id}" name="${id}" class="ashby-application-form-input-text" value=""></div>`;
+        extra.innerHTML =
+          textField('x-ref', 'If you were referred, please share the email of the person who referred you') +
+          textField('x-hear', 'How did you hear about us? (e.g. LinkedIn, a friend)') +
+          textField('x-site', 'Which website did you find this job on?') +
+          '<div class="ashby-application-form-field-entry" data-field-path="x-team"><label class="_h _l ashby-application-form-question-title" for="x-team">Which team interests you?</label><div><input class="ashby-application-form-input-autocomplete" aria-autocomplete="list" aria-expanded="false" aria-haspopup="listbox" role="combobox" value=""></div></div>' +
+          '<div class="ashby-application-form-field-entry" data-field-path="x-cv"><label class="_h _l ashby-application-form-question-title" for="x-cv">Cover Letter</label><div class="ashby-application-form-input-file"><input type="file" id="x-cv"></div></div>';
+        root.append(extra);
+        const wide = { ...profile, websites: { ...profile.websites, portfolio: 'https://portfolio.example.com/testy' } };
+        const r8 = await form.fillPage({ profile: wide });
+        const xf = form.readFields();
+        const xval = (id) => form.currentValue(xf.find((f) => f.fieldId === id));
+        const personal = ['testy@example.com', wide.websites.linkedin, wide.websites.portfolio];
+        check('referral question not given the email', personal.includes(xval('x-ref')), false);
+        check('hear-about-us text not given a profile URL', personal.includes(xval('x-hear')), false);
+        check('"which website" not given the portfolio', personal.includes(xval('x-site')), false);
+        check('non-location combobox not given the city', xval('x-team'), '');
+        check('optional empty file field is listed', r8.left.includes('Cover Letter — attach it yourself'), true);
+        extra.remove();
       };
 
       fillChecks().catch((err) => lines.push(` FAIL  threw: ${err?.stack ?? err}`)).then(() => {

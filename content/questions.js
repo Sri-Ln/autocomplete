@@ -54,7 +54,7 @@ AF.questions.SENSITIVE = [
   /\bhispanic|latino\b/i,
   /eeo|equal employment|affirmative action|self.?identif/i,
   /salary history|current (salary|compensation)/i, // illegal to ask in many states
-  /\bage (range|group|bracket)\b|how old/i,
+  /\bage (range|group|bracket)\b|how old\b|\byour (current )?age\b|^age\s*\??$/i,
   /transgender|\bpronouns?\b/i,
   /communit(y|ies) .*identify|lgbt|queer/i,
 ];
@@ -335,8 +335,8 @@ AF.questions.PREFERENCES = [
 
 /**
  * The demographic questions, answered from what the user saved on purpose in
- * the popup — never learned, never guessed. Only on these two pages; anywhere
- * else the same wording is SENSITIVE and left alone.
+ * the popup — never learned, never guessed. Only on SELF_ID_PAGES or when
+ * ctx.selfId is true; anywhere else the same wording is SENSITIVE and left alone.
  *
  * `field` is the Workday formField id (stable across tenants) and is checked
  * first: the veteran question's label is a page of VEVRAA text that also says

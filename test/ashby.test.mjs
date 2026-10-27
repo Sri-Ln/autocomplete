@@ -33,7 +33,7 @@ check('nothing', A.companyFrom('', '/'), null);
 check('host match', A.hostMatch.test('jobs.ashbyhq.com'), true);
 check('no lookalike', A.hostMatch.test('jobs.ashbyhq.com.evil.example'), false);
 check('page detects the submit button', A.pages.application.detectSelector, 'button.ashby-application-form-submit-button');
-check('stub fill returns an empty report', A.pages.application.sections.application.present(), true);
+check('the page has a fill section that is present', A.pages.application.sections.application.present(), true);
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);
