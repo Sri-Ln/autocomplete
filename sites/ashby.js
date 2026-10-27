@@ -33,7 +33,8 @@
   /* ------------------------------------------------------------------ */
 
   const UPLOADER = '.ashby-application-form-autofill-uploader';
-  const TEXT_INPUT = 'textarea, input[type="text"], input[type="email"], input[type="tel"], input[type="url"]';
+  // The reCAPTCHA response textarea is never a question, even inside a field wrap.
+  const TEXT_INPUT = 'textarea:not([name="g-recaptcha-response"]):not(.g-recaptcha-response), input[type="text"], input[type="email"], input[type="tel"], input[type="url"]';
   const clean = (s) => AF.questions.cleanQuestion(s);
 
   /** The visible label of one radio or checkbox: its label[for], else the
@@ -80,7 +81,7 @@
       const consent = [...wrap.querySelectorAll('input[type="radio"][name="communicationConsent"]')];
       if (consent.length) {
         const first = optionLabel(consent[0]).replace(/^(yes|no)\s*[-:]\s*/i, '');
-        fields.push({ wrap: consent[0].closest('label').parentElement, fieldId: 'communicationConsent',
+        fields.push({ wrap: (consent[0].closest('label') ?? consent[0]).parentElement, fieldId: 'communicationConsent',
                       question: first, widget: 'choice', required: false });
       }
     }
