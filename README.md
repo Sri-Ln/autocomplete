@@ -1,6 +1,7 @@
 # Autocomplete
 
-One-click autofill + submit for Workday account creation and application forms.
+One-click autofill + submit for Workday account creation and application forms,
+and for Ashby (`jobs.ashbyhq.com`) applications.
 Manifest V3, vanilla JS, no build step, no dependencies.
 
 ## Status
@@ -11,6 +12,7 @@ Manifest V3, vanilla JS, no build step, no dependencies.
 | **Sign In** | real | live page, 2026-09-10 |
 | **My Information** | real | two live tenants, 2026-09-13 and 2026-09-22 |
 | **My Experience** | real, except inside a language entry | a saved live page, 2026-10-08; `test/myexp-harness.html` |
+| **Ashby application** | real | three saved live pages, 2026-10-27; `test/ashby-harness.html`; live Fill not yet checked |
 
 My Experience has no Fill button. The widget shows one button per section —
 **Education**, **Languages**, **Skills**, **Websites** — and each makes its own
@@ -54,6 +56,18 @@ a "fill every input" fallback.
 **The Create Account button is enabled on a completely empty form.** So a
 disabled-button check proves nothing. What actually protects you is
 `allFieldsLanded()` in `content/guards.js`, which re-reads the DOM after filling.
+
+### Ashby
+
+An Ashby application is one page. **Fill** types your name, email, phone, links and
+location from the profile, answers the rest from your saved and learned answers
+(company questions, the start date as a date pick, agreement boxes, and the
+demographic survey from your saved answers; age and similar questions stay blank),
+and lists what it left for you. It never touches the résumé upload or Ashby's
+"autofill from résumé" box; attach the résumé yourself. A box you ticked or an
+option you chose is never changed. The widget then shows **Submit application**:
+pressing it saves your hand answers under `[company]` and clicks Ashby's submit.
+Fill alone never submits. See `sites/ashby.js`.
 
 ## Install
 
@@ -315,6 +329,8 @@ loads the real content scripts against a React page with synthetic data.
 - `test/myexp-harness.html` — My Experience, section by section, and Submit
 - `test/questions-harness.html?page=aq` (or `vd`, `si`) — Application Questions,
   Voluntary Disclosures and Self Identify
+- `test/ashby-harness.html` — the Ashby application: read, Fill, and the answers
+  Submit would learn
 
 ## How it works
 
@@ -360,6 +376,7 @@ automatically** in the popup's Settings tab does the same thing for every page.
 | `content/pill.js` | The field-anchored "use my saved answer" chip. Shadow DOM. |
 | `content/main.js` | Orchestration. |
 | `sites/workday.js` | **All Workday selectors.** The only file Workday changes affect. |
+| `sites/ashby.js` | **All Ashby selectors**, the form reader, Fill and the Submit-time answers. |
 | `tools/harvest.js` | Console snippet for finding real automation-ids. |
 | `test/harness.html` | Proves the setter drives React state. |
 | `test/myinfo-harness.html` | The whole My Information fill, against a React form. |
@@ -368,6 +385,7 @@ automatically** in the popup's Settings tab does the same thing for every page.
 | `test/questions-harness.html` | The three question pages end to end: Fill, then Submit learning hand answers under `[company]`. `?page=aq`, `vd` or `si`. |
 | `test/guards-harness.html` | The submit-time safety scan. Absent field vs. empty one. |
 | `test/popup-harness.html` | The popup's own storage round-trip, driving the real popup. |
+| `test/ashby-harness.html` | The Ashby application against synthetic markup: read, Fill, readAnswers. |
 | `test/crypto.test.mjs` | Key derivation, encryption, tamper detection. |
 | `test/vault.test.mjs` | Default vs. per-host credential lookup. |
 | `test/gmail.test.mjs` | Which emailed URLs survive the filter. Mostly rejections. |
@@ -406,7 +424,8 @@ Three edits, plus a host pattern:
 3. Add it to the `js` array in `manifest.json` (before `content/registry.js`).
 4. Add its host to **both** `content_scripts.matches` and `host_permissions`.
 
-Nothing in `content/` or `background/` is Workday-specific, so nothing else changes.
+A site names its company with a `company()` hook (used for `[company]` in learned
+answers). Nothing in `content/` or `background/` is site-specific, so nothing else changes.
 
 ## Deliberately not automated
 
