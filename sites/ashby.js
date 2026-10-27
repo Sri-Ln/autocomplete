@@ -170,7 +170,10 @@
 
   async function fillYesNo(f, decision, label, report) {
     const i = Q.pickOption(['Yes', 'No'], decision);
-    if (i < 0) { report.left.push(`${label} — "${decision.answer}" is not Yes or No`); return false; }
+    if (i < 0) {
+      if (f.required) report.left.push(`${label} — "${decision.answer}" is not Yes or No`);
+      return false;
+    }
     const button = f.wrap.querySelector(`button[data-option="${i === 0 ? 'yes' : 'no'}"]`);
     button?.click();
     if (!(await AF.waitFor(() => button?.getAttribute('aria-pressed') === 'true', 1000))) {
@@ -183,7 +186,10 @@
   async function fillChoice(f, decision, label, report) {
     const list = choices(f.wrap);
     const i = Q.pickOption(list.map((c) => c.label), decision);
-    if (i < 0) { report.left.push(`${label} — "${decision.answer}" is not one of the options`); return false; }
+    if (i < 0) {
+      if (f.required) report.left.push(`${label} — "${decision.answer}" is not one of the options`);
+      return false;
+    }
     clickOption(list[i].input);
     if (!(await AF.waitFor(() => list[i].input.checked, 1000))) {
       report.failed.push(`${label} — "${list[i].label}" did not take`);
@@ -290,6 +296,8 @@
         if (!value) {
           if (current) report.already.push(label);
           else if (f.required) report.left.push(`${label} — not in your profile`);
+        /* A set location is never replaced: the typeahead rewrites the text
+         * ("Testville, ZZ, USA"), so a differing value would be replaced forever. */
         } else if (current === value || (f.widget === 'location' && current)) {
           report.already.push(label);
         } else if (await drive(f, value, null, label, report)) {
@@ -305,7 +313,8 @@
       if (!decision.answer) {
         if (current) report.already.push(label);
         else if (f.required) report.left.push(`${label} — ${decision.reason}`);
-      } else if (current && (!fromProfile(decision, profile) || f.widget === 'choice' || f.widget === 'checkbox')) {
+      } else if (current && (current === decision.answer || !fromProfile(decision, profile) ||
+                 ['yesno', 'choice', 'checkbox'].includes(f.widget))) {
         report.already.push(label);
       } else if (await drive(f, decision.answer, decision, label, report)) {
         done = true;

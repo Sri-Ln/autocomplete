@@ -227,6 +227,33 @@
         check('location miss clears the input', combo.value, '');
         check('location miss is left', r3.left.includes('Location — pick it yourself'), true);
 
+        /* a pressed yes/no is the user's answer: kept, never re-clicked */
+        reset();
+        click('[data-field-path="sponsor-1"] button[data-option="yes"]');
+        const r4 = await form.fillPage({ profile });
+        check('pressed yes/no kept', val('sponsor-1'), 'Yes');
+        check('pressed yes/no reported already', has(r4.already, 'sponsorship'), true);
+
+        /* a value already equal to the answer is "already", not replaced */
+        reset();
+        document.querySelector('.ashby-application-form-input-date').value = mmdd;
+        const r5 = await form.fillPage({ profile });
+        check('equal date is already', has(r5.already, 'When could you start'), true);
+        check('equal date not filled or replaced', [has(r5.filled, 'When could you start'), has(r5.replaced, 'When could you start')], [false, false]);
+
+        /* a set location is left alone (a typeahead rewrites its text) */
+        reset();
+        combo.value = 'Elsewhere, ZZ';
+        const r6 = await form.fillPage({ profile });
+        check('prefilled location unchanged', combo.value, 'Elsewhere, ZZ');
+        check('prefilled location already', has(r6.already, 'Location'), true);
+
+        /* an optional question with no matching option is not listed */
+        reset();
+        const r7 = await form.fillPage({ profile: { ...profile, eeoGender: 'nonbinary' } });
+        check('optional unmatched choice left blank', val('_systemfield_eeoc_gender'), '');
+        check('optional unmatched choice not listed', has(r7.left, 'Gender'), false);
+
         /* learning at Submit */
         reset();
         resumeHome.append(resumeItem);
