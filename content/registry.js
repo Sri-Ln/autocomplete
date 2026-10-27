@@ -11,6 +11,25 @@ AF.currentSite = function (hostname = location.hostname) {
 };
 
 /**
+ * The employer's name, as the site tells us.
+ *
+ * Shared code used to read this off the Workday hostname, which is wrong on any
+ * other site. An adapter may define `company()` to say it itself; one that
+ * doesn't falls back to the hostname rule. A hook that throws or returns blank
+ * means "unknown" (null), not a guess.
+ */
+AF.currentCompany = function (site = AF.currentSite()) {
+  if (typeof site?.company !== 'function') return AF.tenantFromHostname();
+  try {
+    const name = site.company();
+    return typeof name === 'string' && name.trim() ? name.trim() : null;
+  } catch (err) {
+    AF.log('company() threw', err);
+    return null;
+  }
+};
+
+/**
  * Which page of that site are we on?
  *
  * An adapter page declares either:

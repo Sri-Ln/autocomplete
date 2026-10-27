@@ -403,7 +403,7 @@
       if (!res?.ok) return '';
       let learned = res.answers ?? {};
       let n = 0;
-      const base = { company: AF.tenantFromHostname(), page: ctx.pageKey };
+      const base = { company: AF.currentCompany(), page: ctx.pageKey };
       for (const a of ctx.page.readAnswers()) {
         const out = AF.questions.remember(learned, a.question, a.answer,
           { ...base, widget: a.widget, fieldId: a.fieldId });

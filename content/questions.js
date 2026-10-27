@@ -576,7 +576,7 @@ const WRITTEN = /\b(why|explain|describe|elaborate|tell us)\b/i;
 
 AF.questions.signature = function (text, ctx = {}) {
   const question = AF.questions.questionCore(text);
-  const company = ctx.company ?? AF.tenantFromHostname?.() ?? '';
+  const company = ctx.company ?? AF.currentCompany?.() ?? AF.tenantFromHostname?.() ?? '';
   const signature = AF.questions.swapCompany(AF.normalizeText(question), company);
   const m = question ? AF.questions.matchRule(question, ctx) : null;
   const refusal = m
