@@ -668,5 +668,16 @@ for (const q of ['Have you worked at Initech before?', 'Why do you want to leave
   check(`not currentEmployer: ${q}`, AF.questions.resolve(q, { profile: CE, learned: {}, widget: 'text' }).rule === 'currentEmployer', false);
 check('never recalled', AF.questions.remember({}, 'Current employer', 'Initech', { widget: 'text' }).stored, false);
 
+/* ---- Export-control screening -> No ---- */
+const EMBARGO = 'Is your most recent country of (1) citizenship or (2) permanent residency one of the following countries: North Korea; Syria; Iran; or Cuba?';
+for (const widget of ['yesno', 'choice']) {
+  const r = AF.questions.resolve(EMBARGO, { profile: {}, learned: {}, widget, selfId: true });
+  check(`embargoed country (${widget}) -> No`, [r.answer, r.rule], ['No', 'embargoedCountry']);
+}
+check('embargoed country: never a text answer',
+  AF.questions.resolve(EMBARGO, { profile: {}, learned: {}, widget: 'text' }).rule === 'embargoedCountry', false);
+check('a country alone is not the screening question',
+  AF.questions.resolve('Would you be willing to travel to Cuba?', { profile: {}, learned: {}, widget: 'yesno' }).rule === 'embargoedCountry', false);
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

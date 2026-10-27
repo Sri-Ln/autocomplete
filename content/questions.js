@@ -245,6 +245,19 @@ AF.questions.DERIVED = [
   },
 
   {
+    /* Export-control screening: "Is your most recent country of citizenship or
+     * permanent residency one of: North Korea; Syria; Iran; or Cuba?" — No
+     * (the user's rule, 2026-10-27). Needs both a sanctioned country and a
+     * citizenship / residency word, so a question that only names one of
+     * these countries elsewhere is left alone. */
+    id: 'embargoedCountry',
+    yesNo: true,
+    test: /^(?=.*\b(north korea|syria|iran|cuba)\b)(?=.*\b(citizen|nationality|national|residen)).*/i,
+    resolve: () => 'No',
+    explain: () => 'defaults to No',
+  },
+
+  {
     id: 'over18',
     test: /\b(18 years|eighteen|at least 18|over 18|age of 18|legal working age)\b/i,
     requires: 'over18',
