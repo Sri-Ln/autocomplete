@@ -15,6 +15,7 @@ const send = (msg) => chrome.runtime.sendMessage(msg);
 const PROFILE_FIELDS = [
   'firstName', 'lastName', 'phone', 'phoneExtension', 'address1', 'address2',
   'city', 'state', 'zip', 'county', 'country', 'source', 'noticePeriod',
+  'email', 'startDate',
   'expectedSalary', 'visaExplanation',
   /* <select>s — .value reads and writes them the same as an input. */
   'eeoGender', 'eeoEthnicity', 'eeoHispanic', 'eeoVeteran', 'eeoDisability',

@@ -30,6 +30,7 @@ export const EMPTY_PROFILE = {
   firstName: '',
   lastName: '',
   phone: '',
+  email: '', // used where a site asks for email without a login — the vault login stays Workday's
   phoneExtension: '', // digits only; left empty on most applications
   address1: '',
   address2: '', // apt / unit — not present on every tenant's form
@@ -67,6 +68,7 @@ export const EMPTY_PROFILE = {
   willingToRelocate: '',
   willingToTravel: '',
   noticePeriod: '',
+  startDate: '', // YYYY-MM-DD, for date-picker start questions
 
   /* One answer to "What is your expected salary?", used as written. */
   expectedSalary: '',
