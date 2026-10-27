@@ -54,10 +54,21 @@ AF.questions.SENSITIVE = [
   /\bhispanic|latino\b/i,
   /eeo|equal employment|affirmative action|self.?identif/i,
   /salary history|current (salary|compensation)/i, // illegal to ask in many states
+  /\bage (range|group|bracket)\b|how old/i,
+  /transgender|pronoun/i,
+  /communit(y|ies) .*identify|lgbt|queer/i,
 ];
 
 AF.questions.isSensitive = (text) =>
   AF.questions.SENSITIVE.some((re) => re.test(String(text ?? '')));
+
+/* A saved 'YYYY-MM-DD' strictly before today's calendar date. Today itself is
+ * still a valid start. */
+function startDatePassed(startDate, today) {
+  const t = today ?? new Date();
+  const iso = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(startDate ?? '')) && startDate < iso;
+}
 
 /* ------------------------------------------------------------------ */
 /* helpers                                                            */
@@ -289,6 +300,22 @@ AF.questions.PREFERENCES = [
     resolve: ({ profile }) => flag(profile.willingToTravel),
   },
   {
+    /* A date picker wants a date, not "2 weeks": answered from the saved start
+     * date. A text box still falls through to noticePeriod below. */
+    id: 'startDate',
+    widget: 'date',
+    test: /notice period|when (can|could) you start|earliest start|availability to start|start date/i,
+    requires: 'startDate',
+    resolve: ({ profile, today }) => {
+      const m = String(profile.startDate ?? '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (!m || startDatePassed(profile.startDate, today)) return null;
+      return mmddyyyy(new Date(+m[1], +m[2] - 1, +m[3]));
+    },
+    /* Why a null: a date that has gone by, as opposed to one never saved. */
+    whyNot: ({ profile, today }) => startDatePassed(profile.startDate, today)
+      ? 'your saved start date has passed — update it in the popup' : null,
+  },
+  {
     id: 'noticePeriod',
     test: /notice period|when (can|could) you start|earliest start|availability to start/i,
     requires: 'noticePeriod',
@@ -408,9 +435,11 @@ AF.questions.matchRule = function (question, ctx = {}) {
   if (FOLLOW_UP.test(question)) return { kind: 'follow-up', rule: null };
   /* A Yes/No default never goes into a text box: "Referred by (name)" is not a "No". */
   const derived = AF.questions.DERIVED.find((r) => !(r.yesNo && widget === 'text') &&
+    (!r.widget || [].concat(r.widget).includes(widget)) &&
     r.test.test(question) && ownsQuestion(r, question));
   if (derived) return { kind: 'derived', rule: derived };
-  const preference = AF.questions.PREFERENCES.find((r) => r.test.test(question));
+  const preference = AF.questions.PREFERENCES.find((r) =>
+    (!r.widget || [].concat(r.widget).includes(widget)) && r.test.test(question));
   if (preference) return { kind: 'preference', rule: preference };
   return null;
 };
@@ -700,25 +729,27 @@ AF.questions.resolve = function (text, ctx = {}) {
     case 'derived': {
       const rule = m.rule;
       const org = extractOrg(rule, question);
-      const answer = rule.resolve({ profile, org, question, affiliates: extractAffiliates(question) });
+      const answer = rule.resolve({ profile, org, question, today: ctx.today, affiliates: extractAffiliates(question) });
       if (answer === null) {
         return {
           answer: null, source: 'none', rule: rule.id,
-          reason: !org && rule.unclear
+          reason: rule.whyNot?.({ profile, today: ctx.today })
+            ?? (!org && rule.unclear
             ? rule.unclear
             : org
               ? `needs your "${rule.requires}" list to answer this for "${org}"`
-              : `set "${rule.requires}" in your profile to answer this automatically`,
+              : `set "${rule.requires}" in your profile to answer this automatically`),
         };
       }
       return { answer, source: 'derived', rule: rule.id,
                reason: rule.explain ? rule.explain({ org, answer }) : 'computed from your profile' };
     }
     case 'preference': {
-      const answer = m.rule.resolve({ profile });
+      const answer = m.rule.resolve({ profile, today: ctx.today });
       return answer === null
         ? { answer: null, source: 'none', rule: m.rule.id,
-            reason: `set "${m.rule.requires}" in your profile to answer this automatically` }
+            reason: m.rule.whyNot?.({ profile, today: ctx.today })
+              ?? `set "${m.rule.requires}" in your profile to answer this automatically` }
         : { answer, source: 'preference', rule: m.rule.id, reason: 'from your saved preference' };
     }
   }

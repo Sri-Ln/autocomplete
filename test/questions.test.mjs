@@ -585,5 +585,19 @@ check('selfId never learns a demographic',
 check('Workday page list still works without the flag',
   AF.questions.resolve('What is your legal gender?', { profile: EEO, page: 'voluntaryDisclosures', widget: 'listbox' }).source, 'self-id');
 
+const TODAY = new Date(2026, 9, 27);
+const sd = (startDate, widget) => AF.questions.resolve('When can you start?',
+  { profile: { noticePeriod: '2 weeks', startDate }, widget, today: TODAY });
+check('date widget gets the saved start date', sd('2026-11-16', 'date').answer, '11/16/2026');
+check('start date equal to today is answered', sd('2026-10-27', 'date').answer, '10/27/2026');
+check('text widget still gets the notice period', sd('2026-11-16', 'text').answer, '2 weeks');
+check('unset start date → blank', sd('', 'date').answer, null);
+check('past start date → blank', sd('2026-10-01', 'date').answer, null);
+check('past start date says why', sd('2026-10-01', 'date').reason, 'your saved start date has passed — update it in the popup');
+for (const q of ['What is your age range?', 'Do you identify as transgender?',
+                 'What are your pronouns?', 'Which communities do you identify with?'])
+  check(`sensitive: ${q}`, AF.questions.isSensitive(q), true);
+check('age wording is not over-broad', AF.questions.isSensitive('Are you willing to manage a team?'), false);
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);
