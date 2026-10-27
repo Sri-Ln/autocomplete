@@ -44,6 +44,8 @@
       const disk = {};
       const mem = { af_session_key: 'fake' };
       const sent = [];
+      const created = [];
+      let asPopup = false;
 
       globalThis.chrome = {
         storage: {
@@ -62,9 +64,14 @@
         tabs: {
           async query() { return [{ id: 1, url: 'https://x.wd5.myworkdayjobs.com/en-US/careers' }]; },
           async sendMessage(_id, msg) { sent.push(msg); },
+          async create(o) { created.push(o); },
         },
+        /* The toolbar popup is the one place getViews({type:'popup'}) lists the
+           page itself; a harness flips this to stand in for either. */
+        extension: { getViews: () => (asPopup ? [window] : []) },
         runtime: {
           sendMessage: (m) => dispatch(m),
+          getURL: (p) => 'chrome-extension://fixture/' + p,
           getManifest: () => ({ content_scripts: [{ matches: ['https://*.myworkdayjobs.com/*'] }] }),
         },
       };
@@ -325,6 +332,49 @@
         })));
         check('unknown keys in a file are dropped, as when typing', 'evil' in (await S.getProfile()), false);
         check('and a setting of the wrong type is ignored', (await S.getSettings()).autoSubmit, true);
+
+        /* ---- 9. import: a tab, not the toolbar popup; confirm in the page ----
+         * The OS file picker and window.confirm both freeze the action popup on
+         * Windows, so the popup hands off to a tab and the confirmation is ours. */
+
+        let picked = 0;
+        $('importFile').addEventListener('click', (e) => { picked++; e.preventDefault(); });
+        asPopup = true;
+        $('importBtn').click();
+        await settle();
+        check('in the toolbar popup, Import opens the page in a tab',
+          created.map((c) => c.url), ['chrome-extension://fixture/popup/popup.html#import']);
+        check('and does not open the file picker', picked, 0);
+
+        asPopup = false;
+        $('importBtn').click();
+        check('in a tab, Import opens the file picker', picked, 1);
+
+        location.hash = '#import';
+        window.__afShowImport();
+        const settingsPanel = document.querySelector('.panel[data-panel="settings"]');
+        check('a tab opened with #import shows the Backup section', settingsPanel.hidden, false);
+        check('with a hint at the button', /Choose your backup file to import\./.test($('importHint').textContent) && !$('importHint').hidden, true);
+        history.replaceState(null, '', location.pathname + location.search);
+
+        const file = new File([text], 'b.json', { type: 'application/json' });
+        const feed = async () => {
+          const dt = new DataTransfer();
+          dt.items.add(file);
+          $('importFile').files = dt.files;
+          $('importFile').dispatchEvent(new Event('change'));
+          await settle(); await settle();
+        };
+        for (const k of Object.keys(disk)) delete disk[k];
+        await feed();
+        check('a chosen file waits for an in-page confirmation', [$('importConfirm').hidden, stored().firstName], [false, undefined]);
+        $('importCancel').click();
+        await settle(); await settle();
+        check('Cancel saves nothing and hides the bar', [$('importConfirm').hidden, stored().firstName], [true, undefined]);
+        await feed();
+        $('importReplace').click();
+        await sleep(100); await settle();
+        check('Replace applies the backup', [stored().firstName, $('importConfirm').hidden], ['Ada', true]);
 
         const v = document.getElementById('verdict');
         v.className = failed ? 'fail' : 'pass';

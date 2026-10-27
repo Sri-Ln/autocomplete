@@ -502,6 +502,17 @@
           <button class="ghost" id="importBtn" type="button">Import from file</button>
           <input type="file" id="importFile" accept="application/json,.json" hidden />
         </div>
+        <p class="fine" id="importHint" hidden>Choose your backup file to import.</p>
+        <div class="import-confirm" id="importConfirm" hidden>
+          <p>
+            Replace your profile and experience with the ones in this file?
+            Remembered answers and picks are merged in. Saved logins are not touched.
+          </p>
+          <div class="row-actions start">
+            <button class="danger" id="importReplace" type="button">Replace</button>
+            <button class="ghost" id="importCancel" type="button">Cancel</button>
+          </div>
+        </div>
         <p class="fine">
           The file holds your personal details in plain text. Keep it somewhere
           private — <b>not</b> inside the extension's folder, where it could end

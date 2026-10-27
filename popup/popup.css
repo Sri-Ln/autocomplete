@@ -593,6 +593,20 @@ details.per-skill[open] summary {
   margin-top: 0;
 }
 
+/* The import confirmation, in the page because window.confirm freezes the
+ * toolbar popup. Same raised-panel look as a card, with a danger edge. */
+.import-confirm {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+  background: var(--bg-raised);
+}
+.import-confirm p {
+  margin: 0 0 8px;
+  font-size: 12px;
+}
+
 /* ── quick copy ── */
 
 .quick {

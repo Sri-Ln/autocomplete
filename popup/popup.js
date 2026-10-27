@@ -1180,7 +1180,43 @@ $('exportBtn').addEventListener('click', async () => {
   toast('Exported. Keep the file somewhere private.', 'ok');
 });
 
-$('importBtn').addEventListener('click', () => $('importFile').click());
+/**
+ * Import cannot run inside the toolbar popup on Windows: the OS file picker
+ * takes focus from the popup, Chrome closes or wedges it, and the change
+ * handler never finishes (window.confirm has the same problem). So in the
+ * popup the button opens this same page in a tab, where both work.
+ *
+ * getViews({ type: 'popup' }) rather than a window-size guess: it lists the
+ * action popup's own window and nothing else, so a tab (or the test harness,
+ * which stubs it) is never mistaken for one.
+ */
+function inToolbarPopup() {
+  try {
+    return !!chrome.extension?.getViews?.({ type: 'popup' }).includes(window);
+  } catch {
+    return false;
+  }
+}
+
+$('importBtn').addEventListener('click', async () => {
+  if (!inToolbarPopup()) return $('importFile').click();
+  await chrome.tabs.create({ url: chrome.runtime.getURL('popup/popup.html#import') });
+  window.close();
+});
+
+/* Opened as `popup.html#import`: land on the Backup section with a hint. The
+ * picker itself is not opened — a browser only allows that from a click. */
+function showImportIfAsked() {
+  if (location.hash !== '#import') return;
+  document.querySelector('.tab[data-tab="settings"]').click();
+  $('importHint').hidden = false;
+  $('importBtn').scrollIntoView?.({ block: 'center' });
+}
+window.__afShowImport = showImportIfAsked;
+showImportIfAsked();
+
+/* The parsed file waits here for the in-page Replace / Cancel. */
+let pendingImport = null;
 
 $('importFile').addEventListener('change', async (e) => {
   const file = e.target.files?.[0];
@@ -1190,10 +1226,20 @@ $('importFile').addEventListener('change', async (e) => {
   const parts = parseBackup(await file.text());
   if (parts.error) return toast(parts.error, 'err');
 
-  if (!confirm('Replace your profile and experience with the ones in this file? ' +
-               'Remembered answers and picks are merged in. Saved logins are not touched.')) {
-    return;
-  }
+  pendingImport = parts;
+  $('importConfirm').hidden = false;
+});
+
+$('importCancel').addEventListener('click', () => {
+  pendingImport = null;
+  $('importConfirm').hidden = true;
+});
+
+$('importReplace').addEventListener('click', async () => {
+  const parts = pendingImport;
+  pendingImport = null;
+  $('importConfirm').hidden = true;
+  if (!parts) return;
 
   await applyBackup(parts);
   await broadcast({ type: 'profileChanged' });
