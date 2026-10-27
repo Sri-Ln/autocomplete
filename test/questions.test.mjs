@@ -576,5 +576,14 @@ check('F5: "I am not a veteran" is preferred over "not a protected veteran"',
 check('F5: with only "not a protected veteran" on offer, that one',
   pick(['I am not a protected veteran', 'I identify as one or more of the classifications of protected veteran'], live(VETQ)), 0);
 
+check('selfId flag answers gender off Workday',
+  AF.questions.resolve('Gender', { profile: EEO, selfId: true, widget: 'choice' }).source, 'self-id');
+check('no flag, no page: gender stays sensitive',
+  AF.questions.resolve('Gender', { profile: EEO, widget: 'choice' }).answer, null);
+check('selfId never learns a demographic',
+  AF.questions.remember({}, 'Gender', 'Female', { selfId: true, widget: 'choice' }).stored, false);
+check('Workday page list still works without the flag',
+  AF.questions.resolve('What is your legal gender?', { profile: EEO, page: 'voluntaryDisclosures', widget: 'listbox' }).source, 'self-id');
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

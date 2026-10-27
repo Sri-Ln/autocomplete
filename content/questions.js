@@ -316,7 +316,8 @@ AF.questions.PREFERENCES = [
  * "disability". `options` map a saved value onto a tenant's wording; "decline"
  * is shared (DECLINE).
  */
-/* Application Questions too: tenants ask veteran status there (Dexcom, 2026-10-13). */
+/* An adapter page can instead set `selfId: true` (ctx.selfId). The list stays for Workday.
+   Application Questions too: tenants ask veteran status there (Dexcom, 2026-10-13). */
 AF.questions.SELF_ID_PAGES = ['voluntaryDisclosures', 'selfIdentify', 'applicationQuestions'];
 
 const DECLINE = /not wish|n[’']?t wish|decline|prefer not|rather not|do not want|don[’']?t want|choose not|not to (answer|disclose|self)|not declared|not specified/i;
@@ -390,9 +391,9 @@ const FOLLOW_UP = /^(?:if (?:yes|so)|if you answered yes|if applicable)\b/i;
 const DECLARATIONS = ['workAuthorization', 'sponsorship', 'over18'];
 
 AF.questions.matchRule = function (question, ctx = {}) {
-  const { page, widget, fieldId = '' } = ctx;
+  const { page, widget, fieldId = '', selfId = false } = ctx;
   /* A saved self-id value is a choice, never text to type into a box. */
-  if (AF.questions.SELF_ID_PAGES.includes(page) && widget !== 'text') {
+  if ((selfId === true || AF.questions.SELF_ID_PAGES.includes(page)) && widget !== 'text') {
     const rule = AF.questions.SELF_ID.find((r) => r.field.test(fieldId)) ??
       AF.questions.SELF_ID.find((r) => r.test.test(question));
     if (rule) return { kind: 'self-id', rule };
