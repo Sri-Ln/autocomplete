@@ -63,7 +63,10 @@
           async query() { return [{ id: 1, url: 'https://x.wd5.myworkdayjobs.com/en-US/careers' }]; },
           async sendMessage(_id, msg) { sent.push(msg); },
         },
-        runtime: { sendMessage: (m) => dispatch(m) },
+        runtime: {
+          sendMessage: (m) => dispatch(m),
+          getManifest: () => ({ content_scripts: [{ matches: ['https://*.myworkdayjobs.com/*'] }] }),
+        },
       };
 
       const S = await import('../background/storage.js');
