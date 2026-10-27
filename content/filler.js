@@ -244,3 +244,40 @@ AF.summarize = function (report) {
   if (report.skipped.length) parts.push(`${report.skipped.length} not configured`);
   return parts.join(' · ');
 };
+
+/**
+ * One line for the widget, for every site.
+ *   "Education: 4 filled, 2 already there, 1 entry added. Left for you: …"
+ * `kept` — values already on the form that differ from the profile — are
+ * named, because "we left your school alone" is something to check.
+ */
+AF.describeReport = function (report) {
+  if (report.note && !report.filled.length && !report.already.length) {
+    return { kind: 'info', text: `${report.section}: ${report.note}` };
+  }
+  // The itemised report goes to the console, never the widget.
+  AF.log(`${report.section} report`, report);
+
+  const parts = [
+    report.filled.length && `${report.filled.length} filled`,
+    report.replaced.length && `${report.replaced.length} replaced`,
+    report.already.length && `${report.already.length} already set`,
+    report.added && `${report.added} ${report.added === 1 ? 'entry' : 'entries'} added`,
+    report.signed?.length && `${report.signed.length} signed`,
+  ].filter(Boolean);
+  let text = `${report.section}: ${parts.join(', ') || 'nothing to do'}.`;
+
+  // What still needs the user: at most two, kept short, and a count of the rest.
+  const todo = [...report.failed, ...report.left, ...report.kept];
+  if (todo.length) {
+    const clip = (t) => (t.length > 70 ? `${t.slice(0, 67)}…` : t);
+    const more = todo.length > 2 ? ` (+${todo.length - 2} more)` : '';
+    text += ` Needs you: ${todo.slice(0, 2).map(clip).join('; ')}${more}.`;
+  }
+  // Languages this employer's list does not offer — said, never asked of the user.
+  const gone = report.unavailable ?? [];
+  if (gone.length) text += ` ${gone.join(', ')} not in list.`;
+
+  const kind = report.failed.length ? 'err' : todo.length ? 'warn' : 'ok';
+  return { kind, text };
+};
