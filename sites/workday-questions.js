@@ -100,7 +100,7 @@
           const i = Q.pickOption(texts, decision);
           return i >= 0
             ? { ok: true, index: i, text: texts[i] }
-            : { ok: false, reason: `"${decision.answer}" is not one of the options` };
+            : { ok: false, reason: Q.optionReason(decision) };
         });
         if (res.already) { report.already.push(label); return 'already'; }
         if (!res.ok) { report.left.push(`${label} — ${res.reason}`); return null; }
@@ -127,7 +127,7 @@
       case 'choice': {
         const list = choices(f.wrap);
         const i = Q.pickOption(list.map((c) => c.label), decision);
-        if (i < 0) { report.left.push(`${label} — "${decision.answer}" is not one of the options`); return null; }
+        if (i < 0) { report.left.push(`${label} — ${Q.optionReason(decision)}`); return null; }
         list[i].input.click();
         if (!(await AF.waitFor(() => list[i].input.checked, 1000))) {
           report.failed.push(`${label} — "${list[i].label}" did not take`);

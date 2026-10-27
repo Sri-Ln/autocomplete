@@ -202,6 +202,20 @@ AF.questions.DERIVED = [
   },
 
   {
+    /* "Current employer", "Most recent company", "Current or most recent
+     * employer name" — the top line of "Companies you've worked for". Short
+     * label shapes only, anchored: "Why do you want to leave your current
+     * employer?" and "Have you worked at X?" are other questions. Owned here,
+     * so never recalled; an empty list leaves the field. */
+    id: 'currentEmployer',
+    test: /^(?:current|most recent|latest)(?:\s*\(?\s*(?:or|\/)\s*(?:most recent|current|latest)\s*\)?)?\s+(?:employer|company)(?:\s+name)?\s*[?:*]*$/i,
+    requires: 'employers',
+    resolve: ({ profile }) =>
+      (Array.isArray(profile.employers) ? profile.employers : []).map((e) => String(e ?? '').trim()).find(Boolean) ?? null,
+    explain: () => 'the first company in your employment history',
+  },
+
+  {
     id: 'relativeEmployed',
     yesNo: true,
     test: /(relative|family member|friend|acquaintance).{0,40}(employ|work)/i,
@@ -271,6 +285,17 @@ AF.questions.DERIVED = [
     explain: () => 'from your sponsorship answers (No unless you set them)',
   },
 ];
+
+/** How the user is authorized to work — picks among several "Yes" rows.
+ *  'citizen' | 'permanentResident' | 'visa' | '' (unknown). The popup's
+ *  "Work authorization basis" wins; otherwise needing sponsorship (now or
+ *  later) means a visa. */
+AF.questions.workAuthBasis = (profile = {}) => {
+  const set = String(profile.workAuthBasis ?? '').trim();
+  if (['citizen', 'permanentResident', 'visa'].includes(set)) return set;
+  const { now, future } = AF.questions.sponsorshipFlags(profile);
+  return now === 'Yes' || future === 'Yes' ? 'visa' : '';
+};
 
 /** The two sponsorship answers, Yes/No each. A profile from before the split
  *  has only `needsSponsorship`, which then stands for both. */
@@ -480,6 +505,26 @@ AF.questions.pickOption = function (options, decision) {
       !/\b(not|don[’']?t|disagree|decline)\b/i.test(t));
   }
 
+  /* "Yes - I have US work authorization as a Citizen…" / "Yes - … via a
+   * non-immigrant visa…": with more than one Yes row, the right one depends on
+   * HOW the user is authorized (decision.basis). Unknown, or no row for it,
+   * picks nothing rather than a guess. */
+  if (decision.source === 'derived' && decision.rule === 'workAuthorization' && decision.answer === 'Yes') {
+    const yesRows = texts.map((t, i) => (/^yes\b/i.test(t) || (AFFIRM.test(t) && !NEGATE.test(t)) ? i : -1)).filter((i) => i >= 0);
+    if (yesRows.length > 1) {
+      const rowFor = (re) => yesRows.find((i) => re.test(texts[i])) ?? -1;
+      switch (decision.basis) {
+        case 'visa': return rowFor(/visa|non-?immigrant|\bf-?1\b|\bh-?1b\b|\bopt\b|\bead\b|\bl-?1\b|\btn\b|sponsor/i);
+        case 'citizen': return rowFor(/citizen/i);
+        case 'permanentResident': {
+          const i = rowFor(/permanent resident|green card/i);
+          return i >= 0 ? i : rowFor(/citizen/i);
+        }
+        default: return -1;
+      }
+    }
+  }
+
   const norm = texts.map((t) => AF.normalizeText(t));
   const want = AF.normalizeText(decision.answer);
   let i = norm.indexOf(want);
@@ -495,6 +540,12 @@ AF.questions.pickOption = function (options, decision) {
   }
   return i;
 };
+
+/** Why a decision found no row, for the drivers' "left" report. */
+AF.questions.optionReason = (decision) =>
+  decision?.rule === 'workAuthorization' && decision.answer === 'Yes' && 'basis' in decision
+    ? 'no "Yes" row fits — set "Work authorization basis" in the popup'
+    : `"${decision?.answer}" is not one of the options`;
 
 /* ------------------------------------------------------------------ */
 /* 3b. visa explanation — prose, not a tier                           */
@@ -743,7 +794,9 @@ AF.questions.resolve = function (text, ctx = {}) {
         };
       }
       return { answer, source: 'derived', rule: rule.id,
-               reason: rule.explain ? rule.explain({ org, answer }) : 'computed from your profile' };
+               reason: rule.explain ? rule.explain({ org, answer }) : 'computed from your profile',
+               /* pickOption needs this to choose among several "Yes" rows. */
+               ...(rule.id === 'workAuthorization' ? { basis: AF.questions.workAuthBasis(profile) } : {}) };
     }
     case 'preference': {
       const answer = m.rule.resolve({ profile, today: ctx.today });

@@ -622,5 +622,51 @@ for (const q of ['What stage are you at?', 'Expected wage?', 'Which agency refer
                  'What is your average response time?', 'Please share your page URL.'])
   check(`not age: ${q}`, AF.questions.isSensitive(q), false);
 
+/* ---- Work authorization with several "Yes" rows: pick by basis ---- */
+const WA_Q = 'Are you currently authorized to work for any employer in the United States?';
+const WA_ROWS = [
+  'Yes - I have US work authorization as a Citizen or US Permanent Resident / Green Card Holder',
+  'Yes - I have US work authorization via a non-immigrant visa (e.g. F-1, H-1B, L-1, TN)',
+  'No - I am not currently authorized to work in the US',
+];
+const waPick = (profile, rows = WA_ROWS) =>
+  AF.questions.pickOption(rows, AF.questions.resolve(WA_Q, { profile, learned: {}, widget: 'choice' }));
+const WAP = { workAuthorized: 'yes', needsSponsorshipNow: 'no', needsSponsorshipFuture: 'yes' };
+check('sponsorship flag Yes -> visa row', waPick(WAP), 1);
+check('workAuthBasis visa -> visa row', waPick({ workAuthorized: 'yes', workAuthBasis: 'visa' }), 1);
+check('workAuthBasis citizen -> citizen row', waPick({ workAuthorized: 'yes', workAuthBasis: 'citizen' }), 0);
+check('workAuthBasis permanentResident -> green card row', waPick({ workAuthorized: 'yes', workAuthBasis: 'permanentResident' }), 0);
+check('explicit basis beats the sponsorship flags', waPick({ ...WAP, workAuthBasis: 'citizen' }), 0);
+check('unknown basis picks nothing', waPick({ workAuthorized: 'yes', needsSponsorshipNow: 'no', needsSponsorshipFuture: 'no' }), -1);
+check('no row for the basis picks nothing', waPick({ workAuthorized: 'yes', workAuthBasis: 'citizen' },
+  [WA_ROWS[1], 'Yes - I have another status', WA_ROWS[2]]), -1);
+check('permanent resident falls back to a citizen-or-permanent row',
+  waPick({ workAuthorized: 'yes', workAuthBasis: 'permanentResident' }, ['Yes - citizen', WA_ROWS[1], WA_ROWS[2]]), 0);
+check('a No answer is unchanged', waPick({ workAuthorized: 'no', workAuthBasis: 'visa' }), 2);
+check('plain Yes/No is unchanged', waPick({ workAuthorized: 'yes' }, ['Yes', 'No']), 0);
+check('a single Yes row is unchanged', waPick({ workAuthorized: 'yes' }, [WA_ROWS[1], WA_ROWS[2]]), 0);
+check('the decision carries the basis',
+  AF.questions.resolve(WA_Q, { profile: WAP, learned: {} }).basis, 'visa');
+check('the left reason names the popup field',
+  /work authorization basis/i.test(AF.questions.optionReason(AF.questions.resolve(WA_Q, { profile: WAP, learned: {} }))), true);
+
+/* ---- "Other website" -> handled in sites/ashby.js (harness) ---- */
+
+/* ---- Current employer: first of employers ---- */
+const CE = { employers: ['Initech', 'Globex'] };
+for (const q of ['Current employer', 'Current company?', 'Most recent employer', 'Current or most recent employer',
+                 'Current or most recent company name', 'Current (or most recent) employer', 'Most recent company name?']) {
+  const r = AF.questions.resolve(q, { profile: CE, learned: {}, widget: 'text' });
+  check(`current employer: ${q}`, [r.answer, r.rule, r.source], ['Initech', 'currentEmployer', 'derived']);
+}
+check('blank first lines are skipped',
+  AF.questions.resolve('Current employer', { profile: { employers: ['', '  ', 'Globex'] }, learned: {}, widget: 'text' }).answer, 'Globex');
+check('empty list -> no answer',
+  AF.questions.resolve('Current employer', { profile: { employers: [] }, learned: {}, widget: 'text' }).answer, null);
+for (const q of ['Have you worked at Initech before?', 'Why do you want to leave your current employer?',
+                 'Are you a current employee of Initech?', 'Is your current employer aware you are applying?'])
+  check(`not currentEmployer: ${q}`, AF.questions.resolve(q, { profile: CE, learned: {}, widget: 'text' }).rule === 'currentEmployer', false);
+check('never recalled', AF.questions.remember({}, 'Current employer', 'Initech', { widget: 'text' }).stored, false);
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

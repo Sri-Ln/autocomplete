@@ -31,6 +31,7 @@ const PROFILE_LIST_FIELDS = ['employers'];
 const PROFILE_SEG_FIELDS = [
   'over18', 'willingToRelocate', 'willingToTravel',
   'workAuthorized', 'needsSponsorshipNow', 'needsSponsorshipFuture',
+  'workAuthBasis', // not Yes/No: '' | 'citizen' | 'permanentResident' | 'visa'
 ];
 
 /* ------------------------------------------------------------------ */

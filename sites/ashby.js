@@ -127,7 +127,7 @@
     { widget: 'text', test: (f) => !!f.wrap.querySelector('input[type="tel"]') || /^((mobile|cell) )?phone( number)?$/i.test(f.question), value: (p) => p.phone },
     { widget: 'text', test: (f) => /^linkedin( (profile|url))?( url)?$/i.test(f.question), value: (p) => p.websites?.linkedin },
     { widget: 'text', test: (f) => /^github( (profile|url))?$/i.test(f.question), value: (p) => p.websites?.github },
-    { widget: 'text', test: (f) => /^(personal )?(website|portfolio|site)( ?\/ ?(website|portfolio))?( url)?$/i.test(f.question), value: (p) => p.websites?.portfolio },
+    { widget: 'text', test: (f) => /^(personal |other )?(website|portfolio|site)( ?\/ ?(website|portfolio))?( url)?$/i.test(f.question), value: (p) => p.websites?.portfolio },
     { widget: 'location', test: (f) => f.fieldId === '_systemfield_location' || /^(current )?location$|where are you (currently )?(located|based)|city/i.test(f.question),
       value: (p) => [p.city, p.state].map((x) => String(x ?? '').trim()).filter(Boolean).join(', ') },
   ];
@@ -187,7 +187,7 @@
     const list = choices(f.wrap);
     const i = Q.pickOption(list.map((c) => c.label), decision);
     if (i < 0) {
-      if (f.required) report.left.push(`${label} — "${decision.answer}" is not one of the options`);
+      if (f.required) report.left.push(`${label} — ${Q.optionReason(decision)}`);
       return false;
     }
     clickOption(list[i].input);

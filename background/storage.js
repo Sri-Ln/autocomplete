@@ -65,6 +65,10 @@ export const EMPTY_PROFILE = {
   workAuthorized: '',
   needsSponsorshipNow: '',    // sponsorship needed to commence employment
   needsSponsorshipFuture: '', // sponsorship needed in the future
+  /* How you are authorized: 'citizen' | 'permanentResident' | 'visa' | '' .
+   * Only used to pick among several "Yes - I have US work authorization…"
+   * rows; when empty, needing sponsorship (now or later) is read as a visa. */
+  workAuthBasis: '',
   willingToRelocate: '',
   willingToTravel: '',
   noticePeriod: '',

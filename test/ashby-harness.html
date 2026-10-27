@@ -280,6 +280,16 @@
           textField('x-ref', 'If you were referred, please share the email of the person who referred you') +
           textField('x-hear', 'How did you hear about us? (e.g. LinkedIn, a friend)') +
           textField('x-site', 'Which website did you find this job on?') +
+          textField('x-other', 'Other website') +
+          textField('x-other-url', 'Other Website URL') +
+          textField('x-cur', 'Current or most recent employer') +
+          textField('x-leave', 'Why do you want to leave your current employer?') +
+          `<div data-field-path="x-wa"><fieldset class="ashby-application-form-input-radio-group"><label class="_h _required_x1 _l ashby-application-form-question-title" for="x-wa">Are you currently authorized to work for any employer in the United States?</label>${
+            ['Yes - I have US work authorization as a Citizen or US Permanent Resident / Green Card Holder',
+             'Yes - I have US work authorization via a non-immigrant visa (e.g. F-1, H-1B, L-1, TN)',
+             'No - I am not currently authorized to work in the US'].map((t, i) =>
+              `<div class="ashby-application-form-input-radio-group-option"><span><input type="radio" id="form1_x-wa-labeled-radio-${i}" name="form1_x-wa"></span><label for="form1_x-wa-labeled-radio-${i}" class="ashby-application-form-input-radio-group-option-label">${t}</label></div>`).join('')
+          }</fieldset></div>` +
           '<div class="ashby-application-form-field-entry" data-field-path="x-team"><label class="_h _l ashby-application-form-question-title" for="x-team">Which team interests you?</label><div><input class="ashby-application-form-input-autocomplete" aria-autocomplete="list" aria-expanded="false" aria-haspopup="listbox" role="combobox" value=""></div></div>' +
           '<div class="ashby-application-form-field-entry" data-field-path="x-cv"><label class="_h _l ashby-application-form-question-title" for="x-cv">Cover Letter</label><div class="ashby-application-form-input-file"><input type="file" id="x-cv"></div></div>';
         root.append(extra);
@@ -292,6 +302,17 @@
         check('hear-about-us text not given a profile URL', personal.includes(xval('x-hear')), false);
         check('"which website" not given the portfolio', personal.includes(xval('x-site')), false);
         check('non-location combobox not given the city', xval('x-team'), '');
+        check('"Other website" takes the portfolio', xval('x-other'), wide.websites.portfolio);
+        check('"Other Website URL" takes the portfolio', xval('x-other-url'), wide.websites.portfolio);
+        check('current employer left when the list is empty', xval('x-cur'), '');
+        check('"why leave" text not given an employer', xval('x-leave'), '');
+        check('work authorization with no basis picks no row', xval('x-wa'), '');
+        check('and says to set the basis', r8.left.some((l) => /Work authorization basis/.test(l)), true);
+        const r9 = await form.fillPage({ profile: { ...wide, workAuthBasis: 'visa', employers: ['Globex Synthetic', 'Initech Synthetic'] } });
+        const yf = form.readFields();
+        const yval = (id) => form.currentValue(yf.find((f) => f.fieldId === id));
+        check('current employer is the first of employers', yval('x-cur'), 'Globex Synthetic');
+        check('work authorization basis visa picks the visa row', yval('x-wa').startsWith('Yes - I have US work authorization via a non-immigrant visa'), true);
         check('optional empty file field is listed', r8.left.includes('Cover Letter — attach it yourself'), true);
         extra.remove();
       };
