@@ -142,7 +142,7 @@ AF.answerQuestions = function ({ profile, answers }) {
       continue;
     }
 
-    const decision = AF.questions.resolve(group.question, { profile, learned: answers, company: AF.currentCompany?.() ?? AF.tenantFromHostname() });
+    const decision = AF.questions.resolve(group.question, { profile, learned: answers, company: (typeof AF.currentCompany === 'function' ? AF.currentCompany() : AF.tenantFromHostname()) ?? '' });
 
     if (!decision.answer) {
       result.left.push({ question: short, reason: decision.reason, source: decision.source });
@@ -176,7 +176,7 @@ AF.captureAnswers = function (learned) {
     const answer = AF.labelForInput(group.selected);
     if (!answer) continue;
 
-    const out = AF.questions.remember(next, group.question, answer, { company: AF.currentCompany?.() ?? AF.tenantFromHostname() });
+    const out = AF.questions.remember(next, group.question, answer, { company: (typeof AF.currentCompany === 'function' ? AF.currentCompany() : AF.tenantFromHostname()) ?? '' });
     if (out.stored) {
       next = out.learned;
       stored.push({ question: group.question.slice(0, 70), answer });

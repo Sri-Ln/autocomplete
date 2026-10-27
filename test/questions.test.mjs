@@ -599,5 +599,18 @@ for (const q of ['What is your age range?', 'Do you identify as transgender?',
   check(`sensitive: ${q}`, AF.questions.isSensitive(q), true);
 check('age wording is not over-broad', AF.questions.isSensitive('Are you willing to manage a team?'), false);
 
+check('pronounce is not the pronoun question', AF.questions.isSensitive('How do you pronounce your name?'), false);
+
+/* A site that names no company (hook returns null) must not fall back to the
+   hostname: on Ashby that rule would say "jobs". */
+{
+  const keep = [AF.currentCompany, AF.tenantFromHostname];
+  AF.currentCompany = () => null;
+  AF.tenantFromHostname = () => 'jobs';
+  check('null company hook: hostname is not swapped in',
+    AF.questions.signature('Do you enjoy open jobs at Acme?').signature, 'do you enjoy open jobs at acme');
+  [AF.currentCompany, AF.tenantFromHostname] = keep;
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

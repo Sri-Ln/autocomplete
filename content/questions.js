@@ -55,7 +55,7 @@ AF.questions.SENSITIVE = [
   /eeo|equal employment|affirmative action|self.?identif/i,
   /salary history|current (salary|compensation)/i, // illegal to ask in many states
   /\bage (range|group|bracket)\b|how old/i,
-  /transgender|pronoun/i,
+  /transgender|\bpronouns?\b/i,
   /communit(y|ies) .*identify|lgbt|queer/i,
 ];
 
@@ -606,7 +606,9 @@ const WRITTEN = /\b(why|explain|describe|elaborate|tell us)\b/i;
 
 AF.questions.signature = function (text, ctx = {}) {
   const question = AF.questions.questionCore(text);
-  const company = ctx.company ?? AF.currentCompany?.() ?? AF.tenantFromHostname?.() ?? '';
+  const company = ctx.company ??
+    // A site that names no company means none — never fall through to the hostname.
+    (typeof AF.currentCompany === 'function' ? AF.currentCompany() : AF.tenantFromHostname?.()) ?? '';
   const signature = AF.questions.swapCompany(AF.normalizeText(question), company);
   const m = question ? AF.questions.matchRule(question, ctx) : null;
   const refusal = m
@@ -729,16 +731,15 @@ AF.questions.resolve = function (text, ctx = {}) {
     case 'derived': {
       const rule = m.rule;
       const org = extractOrg(rule, question);
-      const answer = rule.resolve({ profile, org, question, today: ctx.today, affiliates: extractAffiliates(question) });
+      const answer = rule.resolve({ profile, org, question, affiliates: extractAffiliates(question) });
       if (answer === null) {
         return {
           answer: null, source: 'none', rule: rule.id,
-          reason: rule.whyNot?.({ profile, today: ctx.today })
-            ?? (!org && rule.unclear
+          reason: !org && rule.unclear
             ? rule.unclear
             : org
               ? `needs your "${rule.requires}" list to answer this for "${org}"`
-              : `set "${rule.requires}" in your profile to answer this automatically`),
+              : `set "${rule.requires}" in your profile to answer this automatically`
         };
       }
       return { answer, source: 'derived', rule: rule.id,
