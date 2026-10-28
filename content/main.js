@@ -347,7 +347,8 @@
           merged[k].push(...(report[k] ?? []));
         }
         merged.added += report.added ?? 0;
-        if (report.note && !report.filled.length && !report.already.length) {
+        // `quietInAll`: a note worth saying for its own button, not a to-do here.
+        if (report.note && !report.quietInAll && !report.filled.length && !report.already.length) {
           merged.left.push(`${ctx.page.sections[sid].label}: ${report.note}`);
         }
       }

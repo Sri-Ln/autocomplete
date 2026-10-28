@@ -55,6 +55,7 @@
             async get(k) { return k in disk ? { [k]: disk[k] } : {}; },
             async set(o) { Object.assign(disk, o); },
             async clear() { for (const k of Object.keys(disk)) delete disk[k]; },
+            async remove(k) { delete disk[k]; },
           },
           session: {
             async get(k) { return k in mem ? { [k]: mem[k] } : {}; },
@@ -98,6 +99,12 @@
           case 'saveAnswers': await S.setAnswers(m.answers); return { ok: true };
           case 'savePick': await S.savePick(m.hostname, m.key, m.value); return { ok: true };
           case 'wipe': await S.wipeAll(); return { ok: true };
+          case 'getResumeInfo': return { ok: true, resume: await S.getResumeInfo() };
+          case 'saveResume': {
+            const error = await S.setResume({ name: m.name, type: m.fileType, data: m.data });
+            return error ? { ok: false, error } : { ok: true };
+          }
+          case 'clearResume': await S.clearResume(); return { ok: true };
 
           /* The state the feature actually ships in: manifest.json still holds
              the REPLACE_ME client id, so the popup must show setup steps and
@@ -392,9 +399,8 @@
         check('unknown keys in a file are dropped, as when typing', 'evil' in (await S.getProfile()), false);
         check('and a setting of the wrong type is ignored', (await S.getSettings()).autoSubmit, true);
 
-        /* ---- 9. import: a tab, not the toolbar popup; confirm in the page ----
-         * The OS file picker and window.confirm both freeze the action popup on
-         * Windows, so the popup hands off to a tab and the confirmation is ours. */
+        /* ---- 9. import: the picker in the popup; confirm in the page ----
+         * window.confirm wedges the toolbar popup, so the confirmation is ours. */
 
         let picked = 0;
         $('importFile').addEventListener('click', (e) => { picked++; e.preventDefault(); });
@@ -402,20 +408,8 @@
         asPopup = true;
         $('importBtn').click();
         await settle();
-        check('in the toolbar popup, Import opens the page in a tab',
-          created.map((c) => c.url), ['chrome-extension://fixture/popup/popup.html#import']);
-        check('and does not open the file picker', picked, 0);
-
+        check('in the toolbar popup, Import opens the file picker, no tab', [picked, created.length], [1, 0]);
         asPopup = false;
-        $('importBtn').click();
-        check('in a tab, Import opens the file picker', picked, 1);
-
-        location.hash = '#import';
-        window.__afShowImport();
-        const settingsPanel = document.querySelector('.panel[data-panel="settings"]');
-        check('a tab opened with #import shows the Backup section', settingsPanel.hidden, false);
-        check('with a hint at the button', /Choose your backup file to import\./.test($('importHint').textContent) && !$('importHint').hidden, true);
-        history.replaceState(null, '', location.pathname + location.search);
 
         const file = new File([text], 'b.json', { type: 'application/json' });
         const feed = async () => {
@@ -435,6 +429,36 @@
         $('importReplace').click();
         await sleep(100); await settle();
         check('Replace applies the backup', [stored().firstName, $('importConfirm').hidden], ['Ada', true]);
+
+        /* ---- 9a. the résumé: chosen in a tab, saved whole, shown by name ---- */
+
+        let resumePicked = 0;
+        $('resumeFile').addEventListener('click', (e) => { resumePicked++; e.preventDefault(); });
+        asPopup = true; // the toolbar popup itself: the picker opens there, no tab
+        created.length = 0;
+        $('resumeBtn').click();
+        check('Choose file opens the picker in place, no tab', [resumePicked, created.length], [1, 0]);
+        asPopup = false;
+
+        check('nothing saved yet', [$('resumeName').textContent, $('resumeRemoveBtn').hidden], ['No résumé saved', true]);
+        const pickResume = async (f) => {
+          const dt = new DataTransfer();
+          dt.items.add(f);
+          $('resumeFile').files = dt.files;
+          $('resumeFile').dispatchEvent(new Event('change'));
+          await sleep(100); await settle(); await settle();
+        };
+        await pickResume(new File(['%PDF-1.4 synthetic'], 'testy-resume.pdf', { type: 'application/pdf' }));
+        check('a PDF is saved whole', [disk.af_resume?.name, atob(disk.af_resume?.data ?? '')], ['testy-resume.pdf', '%PDF-1.4 synthetic']);
+        check('and shown by name, with Replace and Remove',
+          [$('resumeName').textContent, $('resumeBtn').textContent, $('resumeRemoveBtn').hidden],
+          ['testy-resume.pdf', 'Replace', false]);
+        await pickResume(new File(['x'], 'photo.png', { type: 'image/png' }));
+        check('another kind of file is refused, the saved one kept', disk.af_resume?.name, 'testy-resume.pdf');
+        check('the résumé is not in a backup', 'resume' in (await B.buildBackup()) || JSON.stringify(await B.buildBackup()).includes('PDF-1.4'), false);
+        $('resumeRemoveBtn').click();
+        await sleep(50); await settle();
+        check('Remove deletes it', [disk.af_resume, $('resumeName').textContent], [undefined, 'No résumé saved']);
 
         /* ---- 9b. every Quick copy chip fits one line at popup width ---- */
 

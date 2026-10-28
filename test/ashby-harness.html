@@ -50,6 +50,7 @@
     <script src="../content/match.js"></script>
     <script src="../content/questions.js"></script>
     <script src="../content/filler.js"></script>
+    <script src="../content/resume.js"></script>
     <script src="../content/registry.js"></script>
     <script src="../sites/ashby.js"></script>
 
@@ -349,6 +350,36 @@
         check('revealed follow-up filled', [zval('x-later'), has(r10.filled, 'sponsorship')], ['Yes', true]);
         check('earlier fields not filled twice', r10.filled.filter((l) => l === 'Name').length, 1);
         gate.remove();
+
+        /* the saved résumé goes into the empty résumé field, and nowhere else */
+        reset();
+        const cover = document.createElement('div');
+        cover.innerHTML = '<div class="ashby-application-form-field-entry" data-field-path="x-cover"><label class="_h _l ashby-application-form-question-title" for="x-cover">Cover Letter</label><div class="ashby-application-form-input-file"><input type="file" id="x-cover"></div></div>';
+        root.append(cover);
+        const resumeInput = document.getElementById('_systemfield_resume');
+        const onUpload = () => {
+          if (!resumeInput.files.length) return;
+          resumeItem.querySelector('span').textContent = resumeInput.files[0].name;
+          resumeHome.append(resumeItem);
+        };
+        resumeInput.addEventListener('change', onUpload);
+        const realLoad = AF.resume.load;
+        AF.resume.load = async () => new File(['%PDF-1.4 synthetic'], 'testy-cv.pdf', { type: 'application/pdf' });
+        const r11 = await form.fillPage({ profile });
+        check('résumé attached and reported', [val('_systemfield_resume'), r11.filled.includes('Resume')], ['testy-cv.pdf', true]);
+        check('cover letter and autofill box untouched',
+          [document.getElementById('x-cover').files.length, document.getElementById('autofill-file').files.length], [0, 0]);
+        const r12 = await form.fillPage({ profile });
+        check('an attached résumé is kept', [r12.filled.includes('Resume'), val('_systemfield_resume')], [false, 'testy-cv.pdf']);
+        AF.resume.load = async () => null;
+        reset();
+        const r13 = await form.fillPage({ profile });
+        check('no saved résumé: nothing said', [val('_systemfield_resume'), [...r13.filled, ...r13.left, ...r13.failed].some((l) => /resume/i.test(l))], ['', false]);
+        AF.resume.load = realLoad;
+        resumeInput.removeEventListener('change', onUpload);
+        resumeInput.value = '';
+        resumeItem.querySelector('span').textContent = 'testy-resume.pdf';
+        cover.remove();
       };
 
       fillChecks().catch((err) => lines.push(` FAIL  threw: ${err?.stack ?? err}`)).then(() => {

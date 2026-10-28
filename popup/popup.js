@@ -75,7 +75,7 @@ function toast(text, kind = 'info') {
 async function boot() {
   await paintVault();
   await Promise.all([
-    loadProfile(), loadCredentials(), loadSettings(), loadGmail(),
+    loadProfile(), loadCredentials(), loadSettings(), loadGmail(), loadResume(),
   ]);
 }
 
@@ -1111,40 +1111,57 @@ $('exportBtn').addEventListener('click', async () => {
   toast('Exported. Keep the file somewhere private.', 'ok');
 });
 
-/**
- * Import cannot run inside the toolbar popup on Windows: the OS file picker
- * takes focus from the popup, Chrome closes or wedges it, and the change
- * handler never finishes (window.confirm has the same problem). So in the
- * popup the button opens this same page in a tab, where both work.
- *
- * getViews({ type: 'popup' }) rather than a window-size guess: it lists the
- * action popup's own window and nothing else, so a tab (or the test harness,
- * which stubs it) is never mistaken for one.
- */
-function inToolbarPopup() {
-  try {
-    return !!chrome.extension?.getViews?.({ type: 'popup' }).includes(window);
-  } catch {
-    return false;
-  }
+/* The picker opens in the popup itself. The confirmation is in the page
+ * (importConfirm), never window.confirm, which wedges the toolbar popup. */
+$('importBtn').addEventListener('click', () => $('importFile').click());
+
+/* ------------------------------------------------------------------ */
+/* résumé                                                              */
+/* ------------------------------------------------------------------ */
+
+/* The popup sees only the file's name and size; the bytes stay in the worker
+ * until a content script asks for them to attach. */
+const RESUME_MAX_BYTES = 5 * 1024 * 1024;
+const fileSize = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
+
+async function loadResume() {
+  const r = (await send({ type: 'getResumeInfo' }))?.resume ?? null;
+  $('resumeName').textContent = r ? r.name : 'No résumé saved';
+  $('resumeMeta').textContent = r
+    ? `${fileSize(r.size)} · saved ${new Date(r.updated).toLocaleDateString()}`
+    : 'PDF or Word, up to 5 MB';
+  $('resumeBtn').textContent = r ? 'Replace' : 'Choose file';
+  $('resumeRemoveBtn').hidden = !r;
 }
 
-$('importBtn').addEventListener('click', async () => {
-  if (!inToolbarPopup()) return $('importFile').click();
-  await chrome.tabs.create({ url: chrome.runtime.getURL('popup/popup.html#import') });
-  window.close();
+/* The picker opens right here. The popup is the only place the saved résumé
+ * changes: a file attached on an application page is never taken from it. */
+$('resumeBtn').addEventListener('click', () => $('resumeFile').click());
+
+const readBase64 = (file) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(String(reader.result).split(',')[1] ?? '');
+  reader.onerror = () => reject(reader.error);
+  reader.readAsDataURL(file);
 });
 
-/* Opened as `popup.html#import`: land on the Backup section with a hint. The
- * picker itself is not opened — a browser only allows that from a click. */
-function showImportIfAsked() {
-  if (location.hash !== '#import') return;
-  document.querySelector('.tab[data-tab="settings"]').click();
-  $('importHint').hidden = false;
-  $('importBtn').scrollIntoView?.({ block: 'center' });
-}
-window.__afShowImport = showImportIfAsked;
-showImportIfAsked();
+$('resumeFile').addEventListener('change', async (e) => {
+  const file = e.target.files?.[0];
+  e.target.value = ''; // so choosing the same file again still fires
+  if (!file) return;
+  if (file.size > RESUME_MAX_BYTES) return toast('That file is over 5 MB.', 'err');
+  const res = await send({ type: 'saveResume', name: file.name, fileType: file.type, data: await readBase64(file) });
+  if (!res?.ok) return toast(res?.error ?? 'Could not save the résumé.', 'err');
+  await loadResume();
+  toast('Résumé saved.', 'ok');
+});
+
+$('resumeRemoveBtn').addEventListener('click', async () => {
+  await send({ type: 'clearResume' });
+  await loadResume();
+  toast('Résumé removed.', 'ok');
+});
+
 
 /* The parsed file waits here for the in-page Replace / Cancel. */
 let pendingImport = null;

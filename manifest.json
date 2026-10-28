@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Autocomplete — Job Application Autofill",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "One-click autofill + submit for Workday and Ashby account creation and application forms.",
 
   "permissions": ["storage", "identity"],
@@ -53,6 +53,7 @@
         "content/radio-groups.js",
         "content/free-text.js",
         "content/filler.js",
+        "content/resume.js",
         "content/guards.js",
         "sites/workday.js",
         "sites/workday-experience.js",

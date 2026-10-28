@@ -273,7 +273,7 @@
           check('its follow-up -> N/A', S()['q-relation'], 'N/A');
           check('signature name', S()['q-name'], 'Testy McTestface');
           check('an unknown required question is left…', S()['q-guild'], '');
-          check('…and named under Needs you', /Widget Guild/.test(msg), true);
+          check('…and counted as needing you', /\b\d+ needs? you\b/.test(msg), true);
           check('a hand answer already there is not overwritten by a learned one', S()['q-lift'], 'No');
           check('two signed (name, verification)', /2 signed/.test(msg), true);
           check('a hand answer is not flipped by a default No', S()['q-relatives'], 'Yes');
@@ -312,7 +312,7 @@
           check('the language dropdown is left as it was', S().disabilityForm, 'English');
           check('name', S().name, 'Testy McTestface');
           check('employee id left blank', S().employeeId, '');
-          check('an optional blank field is not under Needs you', /Employee ID/.test(msg), false);
+          check('an optional blank field is not counted as needing you', /needs? you/.test(msg), false);
           check('date signed is today', S().dateSignedOn,
             { month: today.getMonth() + 1, day: today.getDate(), year: today.getFullYear() });
           check('disability -> the No box', S().disabilityStatus, 'No, I do not have a disability and have not had one in the past');

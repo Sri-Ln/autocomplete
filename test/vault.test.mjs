@@ -30,6 +30,9 @@ globalThis.chrome = {
       async clear() {
         for (const k of Object.keys(disk)) delete disk[k];
       },
+      async remove(key) {
+        delete disk[key];
+      },
     },
     session: {
       async get(key) {
@@ -221,6 +224,24 @@ check('startDate is kept', p2.startDate, '2026-11-16');
 disk.af_profile = { firstName: 'Old' };
 const old = await S.getProfile();
 check('an old profile reads both as empty', [old.email, old.startDate], ['', '']);
+
+// The résumé: stored whole for content scripts, shown to the popup without bytes.
+const pdf = Buffer.from('%PDF-1.4 synthetic').toString('base64');
+check('a PDF is stored', await S.setResume({ name: 'testy-resume.pdf', type: 'application/pdf', data: pdf }), '');
+check('the info has no bytes', await S.getResumeInfo().then(({ updated, ...r }) => r),
+  { name: 'testy-resume.pdf', type: 'application/pdf', size: 18 });
+check('the content script gets the bytes', (await S.getResume()).data, pdf);
+check('a .docx with no type is known by its name',
+  await S.setResume({ name: 'testy.docx', type: '', data: pdf }).then(async (e) => [e, (await S.getResumeInfo()).type]),
+  ['', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']);
+check('another kind of file is refused', await S.setResume({ name: 'photo.png', type: 'image/png', data: pdf }), 'Choose a PDF or Word file.');
+check('over 5 MB is refused', await S.setResume({ name: 'big.pdf', type: 'application/pdf', data: 'A'.repeat(7 * 1024 * 1024) }), 'That file is over 5 MB.');
+check('a refused file leaves the saved one', (await S.getResumeInfo()).name, 'testy.docx');
+await S.clearResume();
+check('cleared', await S.getResumeInfo(), null);
+await S.setResume({ name: 'testy-resume.pdf', type: 'application/pdf', data: pdf });
+await S.wipeAll();
+check('Erase everything removes it', await S.getResume(), null);
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

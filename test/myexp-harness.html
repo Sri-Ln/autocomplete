@@ -462,7 +462,7 @@
       const ORDER = [
         '../content/00-namespace.js', '../content/react-set.js', '../content/match.js',
         '../content/experience.js', '../content/questions.js', '../content/radio-groups.js',
-        '../content/free-text.js', '../content/filler.js', '../content/guards.js',
+        '../content/free-text.js', '../content/filler.js', '../content/resume.js', '../content/guards.js',
         '../sites/workday.js', '../sites/workday-experience.js', '../sites/index.js',
         '../content/registry.js', '../content/widget.js', '../content/pill.js',
       ];
@@ -618,7 +618,7 @@
         check('A: intermediate overall on the single dropdown', lvl(langs[1]), ['3 - Intermediate']);
         check('A: beginner → 1, not "Classroom Study"', lvl(langs[2]), ['1 - Beginner']);
         check('A: the unlisted language is said briefly', /Toki Pona not in list\./.test(msg), true);
-        check('A: and is not a to-do', /Needs you/.test(msg), false);
+        check('A: and is not a to-do', /needs? you/.test(msg), false);
         check('A: no popup left open', openPopups().length, 0);
 
         msg = await press('languages');
@@ -658,7 +658,9 @@
           S().skills.length, 5);
         check('"C#" is C#, not "C" or "Visual C#"',
           [S().skills.includes('C'), S().skills.includes('Visual C#')], [false, false]);
-        check('an unlisted skill is reported, not approximated', /Kubernetes — /.test(msg), true);
+        // The widget gives a count; the name is in the console report.
+        check('an unlisted skill is reported, not approximated',
+          [/\b1 needs you\b/.test(msg), S().skills.some((s) => /kube/i.test(s))], [true, false]);
         check('no popup left open', openPopups().length, 0);
         check('no stray query left in the search box',
           document.querySelector('[data-automation-id="formField-skills"] input').value, '');
@@ -800,6 +802,33 @@
           window.PROFILE.skills, [...skillsBefore, 'Gadgetry']);
         check('and the page recommended skill stays on the page', S().skills.includes('Teamwork (Suggested)'), true);
         check('Submit, again: nothing new for the ladders', window.PROFILE.education[1].degree.length, 2);
+
+        /* ---- Résumé/CV: the saved file into an empty upload, never over one ---- */
+        const resumeSec = AF.sites.workday.pages.myExperience.sections.resume;
+        check('no résumé upload on the page: no Résumé button', resumeSec.present(), false);
+        const cvBox = document.createElement('div');
+        cvBox.innerHTML = '<div role="group" aria-labelledby="Resume/CV-section"><h4 id="Resume/CV-section">Resume/CV</h4>' +
+          '<div data-automation-id="attachments-FileUpload"><div data-automation-id="file-upload-drop-zone"><button type="button" data-automation-id="select-files">Select files</button></div>' +
+          '<input data-automation-id="file-upload-input-ref" type="file" multiple=""></div><div class="cv-items"></div></div>' +
+          '<div role="group" aria-labelledby="Cover-section"><h4 id="Cover-section">Cover Letter</h4><input type="file" id="cv-cover"></div>';
+        document.body.append(cvBox);
+        const cvInput = cvBox.querySelector('[data-automation-id="file-upload-input-ref"]');
+        cvInput.addEventListener('change', () => {
+          for (const f of cvInput.files) cvBox.querySelector('.cv-items').insertAdjacentHTML('beforeend', `<div data-automation-id="file-upload-item">${f.name}</div>`);
+        });
+        check('a résumé upload on the page: the Résumé button shows', resumeSec.present(), true);
+        const realLoad = AF.resume.load;
+        AF.resume.load = async () => null;
+        let rr = await resumeSec.fill({ profile: window.PROFILE });
+        check('no saved résumé: a note, kept out of "Fill all"', [rr.filled.length, /No résumé saved/.test(rr.note), rr.quietInAll], [0, true, true]);
+        AF.resume.load = async () => new File(['%PDF-1.4 synthetic'], 'testy-cv.pdf', { type: 'application/pdf' });
+        rr = await resumeSec.fill({ profile: window.PROFILE });
+        check('saved résumé: attached', [rr.filled, cvBox.querySelectorAll('[data-automation-id="file-upload-item"]').length], [['Résumé'], 1]);
+        check('the cover letter upload is untouched', cvBox.querySelector('#cv-cover').files.length, 0);
+        rr = await resumeSec.fill({ profile: window.PROFILE });
+        check('pressed again: the uploaded file is kept', [rr.already, cvBox.querySelectorAll('[data-automation-id="file-upload-item"]').length], [['Résumé'], 1]);
+        AF.resume.load = realLoad;
+        cvBox.remove();
 
         lines.push(`  --   whole run took ${Math.round(performance.now() - t0)} ms`);
       }

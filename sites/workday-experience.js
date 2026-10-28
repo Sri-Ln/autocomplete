@@ -1165,6 +1165,45 @@
   }
 
   /* ======================================================================
+   * RÉSUMÉ/CV
+   * ==================================================================== */
+
+  /** The résumé upload's section: a group whose heading names a résumé or CV. */
+  function resumeRoot() {
+    for (const g of document.querySelectorAll('[role="group"][aria-labelledby]')) {
+      const id = g.getAttribute('aria-labelledby');
+      const heading = document.getElementById(id)?.textContent ?? id.replace(/-section$/, '');
+      if (AF.resume.isResumeField(heading) && g.querySelector('input[type="file"]')) return g;
+    }
+    return null;
+  }
+
+  /** The saved résumé into an empty upload; an uploaded file is never replaced. */
+  async function fillResume() {
+    const report = newReport('Résumé');
+    const root = resumeRoot();
+    if (!root) {
+      report.note = 'This page has no résumé upload.';
+      return report;
+    }
+    const uploaded = () => root.querySelectorAll('[data-automation-id="file-upload-item"]').length;
+    if (uploaded()) {
+      report.already.push('Résumé');
+      return report;
+    }
+    const file = await AF.resume.load();
+    if (!file) {
+      report.note = 'No résumé saved — add one on the popup\'s Experience tab.';
+      report.quietInAll = true; // the résumé is optional: "Fill all" says nothing
+      return report;
+    }
+    const input = root.querySelector('[data-automation-id="file-upload-input-ref"], input[type="file"]');
+    if (await AF.resume.attach(input, file, () => uploaded() > 0)) report.filled.push('Résumé');
+    else report.failed.push('Résumé — the upload did not take');
+    return report;
+  }
+
+  /* ======================================================================
    * THE PAGE
    * ==================================================================== */
 
@@ -1195,10 +1234,12 @@
     /**
      * One widget button each. `present()` decides whether the button shows;
      * Websites is the one a tenant may leave out entirely (the Social Network
-     * box counts — it is the same button). The other three always show and
+     * box counts — it is the same button), and Résumé shows only where the page
+     * has a résumé upload. The other three always show and
      * say so if the section is missing, rather than vanishing.
      */
     sections: {
+      resume: { label: 'Résumé', fill: run(fillResume), present: () => !!resumeRoot() },
       education: { label: 'Education', fill: run(fillEducation), present: () => true },
       languages: { label: 'Languages', fill: run(fillLanguages), present: () => true },
       skills: { label: 'Skills', fill: run(fillSkills), present: () => true },
