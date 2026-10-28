@@ -18,6 +18,7 @@ const K_VAULT = 'af_vault';     // { default: entry|null, overrides: { host: ent
 const K_SETTINGS = 'af_settings';
 const K_ANSWERS = 'af_answers'; // { <question signature>: { answer, seen, updated } }
 const K_PICKS = 'af_picks';     // { <hostname>: { <picker key>: { value, updated } } }
+const K_RESUME = 'af_resume';   // { name, type, size, data: base64, updated } — not in backups
 const SK_KEY = 'af_session_key'; // raw AES key, base64, memory only
 
 /**
@@ -374,6 +375,47 @@ export async function getSessionKeyRaw() {
 
 export const setSessionKeyRaw = (raw) => chrome.storage.session.set({ [SK_KEY]: raw });
 export const clearSessionKey = () => chrome.storage.session.remove(SK_KEY);
+
+/* ------------------------------------------------------------------ */
+/* résumé                                                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The résumé file the user picked in the popup, kept as base64 so content
+ * scripts can rebuild it as a File and attach it to an upload field. A
+ * browser extension cannot read a file from disk by path, so this copy is the
+ * only way to have it. Kept under its own key: backups export the profile,
+ * answers, picks and settings only, so the file never lands in one.
+ */
+export const RESUME_MAX_BYTES = 5 * 1024 * 1024; // Workday's own cap
+export const RESUME_TYPES = {
+  'application/pdf': /\.pdf$/i,
+  'application/msword': /\.doc$/i,
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': /\.docx$/i,
+};
+
+export const getResume = () => getLocal(K_RESUME, null);
+
+/** The résumé without its bytes, for the popup. */
+export async function getResumeInfo() {
+  const r = await getResume();
+  return r ? { name: r.name, type: r.type, size: r.size, updated: r.updated } : null;
+}
+
+/** → '' when stored, else why not. */
+export async function setResume({ name, type, data } = {}) {
+  const fileName = String(name ?? '').trim();
+  const base64 = String(data ?? '');
+  const kind = Object.entries(RESUME_TYPES).find(([t, ext]) => t === type || ext.test(fileName));
+  if (!fileName || !base64) return 'No file.';
+  if (!kind) return 'Choose a PDF or Word file.';
+  const size = Math.floor((base64.length * 3) / 4) - (base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0);
+  if (size > RESUME_MAX_BYTES) return 'That file is over 5 MB.';
+  await setLocal(K_RESUME, { name: fileName, type: kind[0], size, data: base64, updated: Date.now() });
+  return '';
+}
+
+export const clearResume = () => chrome.storage.local.remove(K_RESUME);
 
 /* ------------------------------------------------------------------ */
 

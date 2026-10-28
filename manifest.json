@@ -53,6 +53,7 @@
         "content/radio-groups.js",
         "content/free-text.js",
         "content/filler.js",
+        "content/resume.js",
         "content/guards.js",
         "sites/workday.js",
         "sites/workday-experience.js",

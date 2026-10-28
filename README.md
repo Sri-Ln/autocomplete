@@ -63,11 +63,23 @@ An Ashby application is one page. **Fill** types your name, email, phone, links 
 location from the profile, answers the rest from your saved and learned answers
 (company questions, the start date as a date pick, agreement boxes, and the
 demographic survey from your saved answers; age and similar questions stay blank),
-and lists what it left for you. It never touches the résumé upload or Ashby's
-"autofill from résumé" box; attach the résumé yourself. A box you ticked or an
-option you chose is never changed. The widget then shows **Submit application**:
+and outlines on the page each question it left for you, scrolling to the first.
+Questions an earlier answer reveals are filled too. Your saved résumé (below) goes
+into an empty résumé upload; Ashby's "autofill from résumé" box and other uploads
+are never touched. A box you ticked or an option you chose is never changed. The
+widget then shows **Submit application**:
 pressing it saves your hand answers under `[company]` and clicks Ashby's submit.
 Fill alone never submits. See `sites/ashby.js`.
+
+### Résumé
+
+Choose your résumé once on the popup's **Experience** tab (PDF or Word, up to
+5 MB). A browser extension cannot read a file from a folder on its own, so the
+extension keeps its own copy. To update it, choose the new file again. Fill attaches it to an empty
+résumé upload: Ashby's résumé field, and Workday's Resume/CV section on My
+Experience (its own **Résumé** button, also run by **Fill all**). A file you
+attached is never replaced, and cover-letter and other uploads are left alone.
+The copy is not included in backups and is removed by **Erase everything**.
 
 ## Install
 

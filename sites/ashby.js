@@ -280,6 +280,7 @@
       return report;
     }
     const ctx = { profile, learned: await loadAnswers(), company: AF.currentCompany(), selfId: true, today: new Date() };
+    await attachResume(report);
     const seen = new Set();
     await fillPass(readFields(), seen, ctx, profile, report);
     /* A follow-up can take a moment to render, so wait for one (up to 1.5s)
@@ -311,6 +312,30 @@
     report.marked = true;
   }
 
+  /* The saved résumé goes into an empty résumé field, before anything else is
+   * filled: should the page read the file and pre-fill from it, the profile
+   * answers that follow still win. No saved résumé or no such field → nothing
+   * said; a file the user attached is never replaced. */
+  async function attachResume(report) {
+    const isResume = (f) => f.widget === 'file' &&
+      (f.fieldId === '_systemfield_resume' || AF.resume.isResumeField(f.question));
+    const f = readFields().find(isResume);
+    if (!f || currentValue(f)) return;
+    const file = await AF.resume.load();
+    if (!file) return;
+    const label = clip(Q.questionCore(f.question)) || 'Resume';
+    const shown = () => {
+      const now = readFields().find((g) => g.fieldId === f.fieldId);
+      return now && currentValue(now);
+    };
+    if (await AF.resume.attach(f.wrap.querySelector('input[type="file"]'), file, shown)) {
+      report.filled.push(label);
+    } else {
+      report.failed.push(`${label} — the upload did not take`);
+      markForUser(f.wrap, report);
+    }
+  }
+
   const fieldKey = (f) => `${f.fieldId}\u0000${f.question}`;
 
   /** Answer the fields not handled by an earlier pass → whether there were any. */
@@ -325,7 +350,7 @@
       }
       seen.add(key);
       any = true;
-      // Files are the user's (résumé upload is not automated), so not even listed.
+      // Files: the résumé is handled up front (attachResume); other uploads are the user's, not listed.
       if (f.widget === 'file') continue;
       const label = clip(Q.questionCore(f.question));
       const current = currentValue(f);

@@ -218,6 +218,24 @@ const handlers = {
     return { ok: true };
   },
 
+  /* The résumé: the popup sees only its name and size; the bytes go to a
+   * content script, which attaches them to the page's own upload field. */
+  async getResume() {
+    return { ok: true, resume: await S.getResume() };
+  },
+  async getResumeInfo() {
+    return { ok: true, resume: await S.getResumeInfo() };
+  },
+  async saveResume(m) {
+    // `fileType`, since `type` names the message.
+    const error = await S.setResume({ name: m.name, type: m.fileType, data: m.data });
+    return error ? { ok: false, error } : { ok: true, resume: await S.getResumeInfo() };
+  },
+  async clearResume() {
+    await S.clearResume();
+    return { ok: true };
+  },
+
   async getSettings() {
     return { ok: true, settings: await S.getSettings() };
   },

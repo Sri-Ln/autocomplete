@@ -298,6 +298,23 @@
 
       <!-- ---- experience (My Experience page) ---- -->
       <div class="panel" data-panel="experience" hidden>
+        <div class="divider" title="Attached to an empty résumé upload when you fill. Never replaces a file you attached.">Résumé</div>
+        <div class="list">
+          <div class="item">
+            <div class="who">
+              <span class="scope" id="resumeName">No résumé saved</span>
+              <span class="email" id="resumeMeta">PDF or Word, up to 5 MB</span>
+            </div>
+          </div>
+        </div>
+        <div class="row-actions start">
+          <button class="ghost" id="resumeBtn" type="button">Choose file</button>
+          <button class="ghost" id="resumeRemoveBtn" type="button" hidden>Remove</button>
+          <input type="file" id="resumeFile" hidden
+                 accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+        </div>
+        <p class="fine" id="resumeHint" hidden>Choose your résumé file.</p>
+
         <div class="divider">Education</div>
         <!-- Two fixed slots: Education 1 and Education 2 on the page. -->
         <div class="card edu" data-edu="0">

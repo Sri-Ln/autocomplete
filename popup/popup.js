@@ -75,7 +75,7 @@ function toast(text, kind = 'info') {
 async function boot() {
   await paintVault();
   await Promise.all([
-    loadProfile(), loadCredentials(), loadSettings(), loadGmail(),
+    loadProfile(), loadCredentials(), loadSettings(), loadGmail(), loadResume(),
   ]);
 }
 
@@ -1145,6 +1145,68 @@ function showImportIfAsked() {
 }
 window.__afShowImport = showImportIfAsked;
 showImportIfAsked();
+
+/* ------------------------------------------------------------------ */
+/* résumé                                                              */
+/* ------------------------------------------------------------------ */
+
+/* The popup sees only the file's name and size; the bytes stay in the worker
+ * until a content script asks for them to attach. */
+const RESUME_MAX_BYTES = 5 * 1024 * 1024;
+const fileSize = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
+
+async function loadResume() {
+  const r = (await send({ type: 'getResumeInfo' }))?.resume ?? null;
+  $('resumeName').textContent = r ? r.name : 'No résumé saved';
+  $('resumeMeta').textContent = r
+    ? `${fileSize(r.size)} · saved ${new Date(r.updated).toLocaleDateString()}`
+    : 'PDF or Word, up to 5 MB';
+  $('resumeBtn').textContent = r ? 'Replace' : 'Choose file';
+  $('resumeRemoveBtn').hidden = !r;
+}
+
+/* The file picker wedges the toolbar popup just as Import's does (see
+ * inToolbarPopup), so there the button opens this page in a tab. */
+$('resumeBtn').addEventListener('click', async () => {
+  if (!inToolbarPopup()) return $('resumeFile').click();
+  await chrome.tabs.create({ url: chrome.runtime.getURL('popup/popup.html#resume') });
+  window.close();
+});
+
+const readBase64 = (file) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(String(reader.result).split(',')[1] ?? '');
+  reader.onerror = () => reject(reader.error);
+  reader.readAsDataURL(file);
+});
+
+$('resumeFile').addEventListener('change', async (e) => {
+  const file = e.target.files?.[0];
+  e.target.value = ''; // so choosing the same file again still fires
+  if (!file) return;
+  if (file.size > RESUME_MAX_BYTES) return toast('That file is over 5 MB.', 'err');
+  const res = await send({ type: 'saveResume', name: file.name, fileType: file.type, data: await readBase64(file) });
+  if (!res?.ok) return toast(res?.error ?? 'Could not save the résumé.', 'err');
+  $('resumeHint').hidden = true;
+  await loadResume();
+  toast('Résumé saved.', 'ok');
+});
+
+$('resumeRemoveBtn').addEventListener('click', async () => {
+  await send({ type: 'clearResume' });
+  await loadResume();
+  toast('Résumé removed.', 'ok');
+});
+
+/* Opened as `popup.html#resume`: land on the Résumé row with a hint. */
+function showResumeIfAsked() {
+  if (location.hash !== '#resume') return;
+  document.querySelector('.tab[data-tab="experience"]').click();
+  $('resumeHint').hidden = false;
+  $('resumeBtn').scrollIntoView?.({ block: 'center' });
+}
+window.__afShowResume = showResumeIfAsked;
+showResumeIfAsked();
 
 /* The parsed file waits here for the in-page Replace / Cancel. */
 let pendingImport = null;
