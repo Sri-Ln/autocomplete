@@ -91,7 +91,7 @@ it after every checkout:
 
 After each merge, run step 3's command again and reload the extension. It
 refuses to touch the folder if anything there was edited by hand. Pass a tag or
-branch to try something other than main: `node tools/sync-extension.mjs v1.0.0`.
+branch to try something other than main: `node tools/sync-extension.mjs v1.1.0`.
 
 ## First-time setup
 
