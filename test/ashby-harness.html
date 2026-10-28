@@ -178,7 +178,7 @@
         const r = await form.fillPage({ profile });
         const ms = Math.round(performance.now() - t0);
         window.__report = r;
-        check('report has the describeReport shape', Object.keys(r).sort(), ['added', 'already', 'failed', 'filled', 'kept', 'left', 'note', 'replaced', 'section', 'signed']);
+        check('report has the describeReport shape', Object.keys(r).sort(), ['added', 'already', 'failed', 'filled', 'kept', 'left', 'marked', 'note', 'replaced', 'section', 'signed']);
         check('section', r.section, 'Application');
         check('name', val('_systemfield_name'), 'Testy McTestface');
         check('email', val('_systemfield_email'), 'testy@example.com');
@@ -204,8 +204,13 @@
          * keeps a Yes/No default out of a text box for a rule without `yesNo`, so
          * that is what is asserted. Reported as a concern, not changed here. */
         check('company question answered by formerEmployee', [has(r.filled, 'Initech'), val('company-1')], [true, 'No']);
-        check('resume listed', r.left.includes('Resume — attach it yourself'), true);
+        check('resume not mentioned', [...r.left, ...r.failed].some((l) => /resume/i.test(l)), false);
+        const marked = [...document.querySelectorAll('[data-af-needs-you]')].map((w) => w.getAttribute('data-field-path'));
+        check('unanswered question outlined, report says so', [marked.includes('office-1'), r.marked], [true, true]);
+        check('nothing else outlined', marked.length, r.left.length + r.failed.length);
         check('office untouched', val('office-1'), '');
+        click('[data-field-path="office-1"] button[data-option="no"]');
+        check('outline goes once the user answers', document.querySelector('[data-field-path="office-1"]').hasAttribute('data-af-needs-you'), false);
         check('file inputs and uploader untouched', touched.file, 0);
         check('submit button not clicked', touched.submit, 0);
         check('nothing failed', r.failed, []);
@@ -313,7 +318,7 @@
         const yval = (id) => form.currentValue(yf.find((f) => f.fieldId === id));
         check('current employer is the first of employers', yval('x-cur'), 'Globex Synthetic');
         check('work authorization basis visa picks the visa row', yval('x-wa').startsWith('Yes - I have US work authorization via a non-immigrant visa'), true);
-        check('optional empty file field is listed', r8.left.includes('Cover Letter — attach it yourself'), true);
+        check('empty file field not listed', r8.left.some((l) => /Cover Letter/.test(l)), false);
         extra.remove();
 
         /* a follow-up the page reveals only once an earlier question is answered */

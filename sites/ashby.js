@@ -274,7 +274,7 @@
    */
   async function fillPage({ profile }) {
     const report = { section: 'Application', filled: [], replaced: [], already: [], kept: [],
-                     left: [], failed: [], signed: [], added: 0, note: '' };
+                     left: [], failed: [], signed: [], added: 0, note: '', marked: false };
     if (!readFields().length) {
       report.note = 'no questions found on this page';
       return report;
@@ -291,6 +291,24 @@
     return report;
   }
 
+  /* A question Fill could not answer is outlined on the page, and the first
+   * one scrolled into view, so "N need you" points somewhere. The outline
+   * goes once the user touches the question. */
+  const MARK = 'data-af-needs-you';
+  function markForUser(wrap, report) {
+    if (!wrap || wrap.hasAttribute(MARK)) return;
+    wrap.setAttribute(MARK, '');
+    Object.assign(wrap.style, { outline: '2px solid #f59e0b', outlineOffset: '6px', borderRadius: '6px' });
+    const clear = () => {
+      wrap.removeAttribute(MARK);
+      Object.assign(wrap.style, { outline: '', outlineOffset: '', borderRadius: '' });
+      for (const t of ['input', 'change', 'click']) wrap.removeEventListener(t, clear, true);
+    };
+    for (const t of ['input', 'change', 'click']) wrap.addEventListener(t, clear, true);
+    if (!report.marked) wrap.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    report.marked = true;
+  }
+
   const fieldKey = (f) => `${f.fieldId}\u0000${f.question}`;
 
   /** Answer the fields not handled by an earlier pass → whether there were any. */
@@ -305,48 +323,49 @@
       }
       seen.add(key);
       any = true;
+      // Files are the user's (résumé upload is not automated), so not even listed.
+      if (f.widget === 'file') continue;
       const label = clip(Q.questionCore(f.question));
       const current = currentValue(f);
-
-      if (f.widget === 'file') {
-        if (!current) report.left.push(`${label} — attach it yourself`);
-        continue;
-      }
-
-      const row = STANDARD.find((r) => r.widget === f.widget && r.test(f));
-      let done = false;
-      if (row) {
-        const value = String(row.value(profile) ?? '').trim();
-        if (!value) {
-          if (current) report.already.push(label);
-          else if (f.required) report.left.push(`${label} — not in your profile`);
-        /* A set location is never replaced: the typeahead rewrites the text
-         * ("Testville, ZZ, USA"), so a differing value would be replaced forever. */
-        } else if (current === value || (f.widget === 'location' && current)) {
-          report.already.push(label);
-        } else if (await drive(f, value, null, label, report)) {
-          report.filled.push(label);
-          if (current) report.replaced.push(`${label} ("${current}")`);
-          done = true;
+      const pending = report.left.length + report.failed.length;
+      try {
+        const row = STANDARD.find((r) => r.widget === f.widget && r.test(f));
+        let done = false;
+        if (row) {
+          const value = String(row.value(profile) ?? '').trim();
+          if (!value) {
+            if (current) report.already.push(label);
+            else if (f.required) report.left.push(`${label} — not in your profile`);
+          /* A set location is never replaced: the typeahead rewrites the text
+           * ("Testville, ZZ, USA"), so a differing value would be replaced forever. */
+          } else if (current === value || (f.widget === 'location' && current)) {
+            report.already.push(label);
+          } else if (await drive(f, value, null, label, report)) {
+            report.filled.push(label);
+            if (current) report.replaced.push(`${label} ("${current}")`);
+            done = true;
+          }
+          previous = (done ? value : current) || null;
+          continue;
         }
-        previous = (done ? value : current) || null;
-        continue;
-      }
 
-      const decision = Q.resolve(f.question, { ...ctx, previous, widget: f.widget === 'yesno' ? 'choice' : f.widget, fieldId: f.fieldId });
-      if (!decision.answer) {
-        if (current) report.already.push(label);
-        else if (f.required) report.left.push(`${label} — ${decision.reason}`);
-      } else if (current && (current === decision.answer || !fromProfile(decision, profile) ||
-                 ['yesno', 'choice', 'checkbox'].includes(f.widget))) {
-        report.already.push(label);
-      } else if (await drive(f, decision.answer, decision, label, report)) {
-        done = true;
-        if (decision.source === 'sign-off') report.signed.push(label);
-        else report.filled.push(label);
-        if (current) report.replaced.push(`${label} ("${current}")`);
+        const decision = Q.resolve(f.question, { ...ctx, previous, widget: f.widget === 'yesno' ? 'choice' : f.widget, fieldId: f.fieldId });
+        if (!decision.answer) {
+          if (current) report.already.push(label);
+          else if (f.required) report.left.push(`${label} — ${decision.reason}`);
+        } else if (current && (current === decision.answer || !fromProfile(decision, profile) ||
+                   ['yesno', 'choice', 'checkbox'].includes(f.widget))) {
+          report.already.push(label);
+        } else if (await drive(f, decision.answer, decision, label, report)) {
+          done = true;
+          if (decision.source === 'sign-off') report.signed.push(label);
+          else report.filled.push(label);
+          if (current) report.replaced.push(`${label} ("${current}")`);
+        }
+        previous = (done ? decision.answer : current) || null;
+      } finally {
+        if (report.left.length + report.failed.length > pending) markForUser(f.wrap, report);
       }
-      previous = (done ? decision.answer : current) || null;
     }
     return any;
   }

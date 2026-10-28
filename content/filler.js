@@ -267,12 +267,11 @@ AF.describeReport = function (report) {
   ].filter(Boolean);
   let text = `${report.section}: ${parts.join(', ') || 'nothing to do'}.`;
 
-  // What still needs the user: at most two, kept short, and a count of the rest.
+  // What still needs the user: a count only — a clipped list could not say
+  // which question it meant. A site that outlines them on the page says so.
   const todo = [...report.failed, ...report.left, ...report.kept];
   if (todo.length) {
-    const clip = (t) => (t.length > 70 ? `${t.slice(0, 67)}…` : t);
-    const more = todo.length > 2 ? ` (+${todo.length - 2} more)` : '';
-    text += ` Needs you: ${todo.slice(0, 2).map(clip).join('; ')}${more}.`;
+    text += ` ${todo.length} need${todo.length === 1 ? 's' : ''} you${report.marked ? ' — outlined on the page' : ''}.`;
   }
   // Languages this employer's list does not offer — said, never asked of the user.
   const gone = report.unavailable ?? [];
