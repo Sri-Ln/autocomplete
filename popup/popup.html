@@ -190,8 +190,10 @@
           </div>
         </div>
 
-        <label>Notice period<input type="text" id="noticePeriod" placeholder="2 weeks" /></label>
-        <label>Earliest start date<input type="date" id="startDate" /></label>
+        <div class="grid2">
+          <label>Notice period<input type="text" id="noticePeriod" placeholder="2 weeks" /></label>
+          <label>Earliest start date<input type="date" id="startDate" /></label>
+        </div>
         <label>Expected salary<input type="text" id="expectedSalary" placeholder="$100,000–$120,000, negotiable" /></label>
 
         <div class="divider" title="Legal declarations, answered only from what you set here. Criminal history is never automated.">Work authorisation</div>
@@ -223,7 +225,7 @@
           </div>
         </div>
         <div class="qrow">
-          <span class="qlabel">Work authorization basis</span>
+          <span class="qlabel">Authorized as</span>
           <div class="seg" id="workAuthBasis" role="radiogroup" aria-label="Work authorization basis">
             <button type="button" data-value="" title="Leave blank — read as a visa if you need sponsorship, else the question is left">–</button>
             <button type="button" data-value="citizen">Citizen</button>
@@ -244,52 +246,54 @@
         </div>
 
         <div class="divider" title="Used only on Voluntary Disclosures and Self Identify pages, as set here. Never learned from a page.">Self-identification</div>
-        <label>Gender
-          <select id="eeoGender">
-            <option value="">Not set — leave it for me</option>
-            <option value="decline">Decline to answer</option>
-            <option value="male">Male</option>
-            <option value="female">Female</option>
-            <option value="nonbinary">Non-binary</option>
-          </select>
-        </label>
-        <label>Race / ethnicity
-          <select id="eeoEthnicity">
-            <option value="">Not set — leave it for me</option>
-            <option value="decline">Decline to answer</option>
-            <option value="asian">Asian</option>
-            <option value="black">Black or African American</option>
-            <option value="white">White</option>
-            <option value="nativeAmerican">American Indian or Alaska Native</option>
-            <option value="pacificIslander">Native Hawaiian or Pacific Islander</option>
-            <option value="twoOrMore">Two or more races</option>
-            <option value="hispanic">Hispanic or Latino</option>
-          </select>
-        </label>
-        <label>Hispanic / Latino
-          <select id="eeoHispanic">
-            <option value="">Not set — leave it for me</option>
-            <option value="decline">Decline to answer</option>
-            <option value="yes">Yes</option>
-            <option value="no">No</option>
-          </select>
-        </label>
-        <label>Veteran status
-          <select id="eeoVeteran">
-            <option value="">Not set — leave it for me</option>
-            <option value="decline">Decline to answer</option>
-            <option value="notVeteran">Not a protected veteran</option>
-            <option value="protectedVeteran">Protected veteran</option>
-          </select>
-        </label>
-        <label>Disability
-          <select id="eeoDisability">
-            <option value="">Not set — leave it for me</option>
-            <option value="decline">Decline to answer</option>
-            <option value="yes">Yes</option>
-            <option value="no">No</option>
-          </select>
-        </label>
+        <div class="fgrid">
+          <label class="frow"><span class="qlabel">Gender</span>
+            <select id="eeoGender" title="Not set: the question is left for you">
+              <option value="">Not set</option>
+              <option value="decline">Decline to answer</option>
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+              <option value="nonbinary">Non-binary</option>
+            </select>
+          </label>
+          <label class="frow"><span class="qlabel">Race / ethnicity</span>
+            <select id="eeoEthnicity" title="Not set: the question is left for you">
+              <option value="">Not set</option>
+              <option value="decline">Decline to answer</option>
+              <option value="asian">Asian</option>
+              <option value="black">Black or African American</option>
+              <option value="white">White</option>
+              <option value="nativeAmerican">American Indian or Alaska Native</option>
+              <option value="pacificIslander">Native Hawaiian or Pacific Islander</option>
+              <option value="twoOrMore">Two or more races</option>
+              <option value="hispanic">Hispanic or Latino</option>
+            </select>
+          </label>
+          <label class="frow"><span class="qlabel">Hispanic / Latino</span>
+            <select id="eeoHispanic" title="Not set: the question is left for you">
+              <option value="">Not set</option>
+              <option value="decline">Decline to answer</option>
+              <option value="yes">Yes</option>
+              <option value="no">No</option>
+            </select>
+          </label>
+          <label class="frow"><span class="qlabel">Veteran status</span>
+            <select id="eeoVeteran" title="Not set: the question is left for you">
+              <option value="">Not set</option>
+              <option value="decline">Decline to answer</option>
+              <option value="notVeteran">Not a protected veteran</option>
+              <option value="protectedVeteran">Protected veteran</option>
+            </select>
+          </label>
+          <label class="frow"><span class="qlabel">Disability</span>
+            <select id="eeoDisability" title="Not set: the question is left for you">
+              <option value="">Not set</option>
+              <option value="decline">Decline to answer</option>
+              <option value="yes">Yes</option>
+              <option value="no">No</option>
+            </select>
+          </label>
+        </div>
       </div>
 
       <!-- ---- experience (My Experience page) ---- -->

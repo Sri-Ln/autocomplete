@@ -27,6 +27,9 @@
   --accent-hover: #6a48f5;
   --danger: #ef7d7d;
   --radius: 10px;
+  /* The popup is dark-only; this makes the browser-drawn parts — a select's
+   * open list, the date picker and its icon — dark to match. */
+  color-scheme: dark;
 }
 
 html,
@@ -151,9 +154,11 @@ label {
 }
 
 textarea,
+select,
 input[type="text"],
 input[type="email"],
 input[type="tel"],
+input[type="date"],
 input[type="password"] {
   display: block;
   width: 100%;
@@ -166,15 +171,81 @@ input[type="password"] {
   font-size: 13px;
   font-family: inherit;
 }
+/* One height for every single-line control, so a select or a date sits level
+ * with the text box beside it. */
+select,
+input:not([type="checkbox"]) {
+  height: 36px;
+  line-height: 18px;
+}
 input::placeholder,
 textarea::placeholder {
   color: #55556a;
 }
 input:focus,
-textarea:focus {
+textarea:focus,
+select:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(124, 92, 255, 0.15);
+}
+
+/* Native <select> and date input, kept native for the keyboard and screen
+ * readers, drawn like the text boxes: no OS bevel, our own chevron. The open
+ * option list still comes from the OS; color-scheme above makes it dark. */
+select,
+input[type="date"] {
+  appearance: none;
+  cursor: pointer;
+}
+select {
+  padding-right: 30px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5l3 3 3-3' fill='none' stroke='%237a7a8c' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 12px;
+  text-overflow: ellipsis;
+}
+select:hover,
+input[type="date"]:hover {
+  border-color: var(--line-bright);
+}
+select:focus,
+input[type="date"]:focus {
+  border-color: var(--accent);
+}
+select option {
+  background: var(--bg-raised);
+  color: var(--text);
+}
+input[type="date"]::-webkit-calendar-picker-indicator {
+  margin-left: 4px;
+  opacity: 0.55;
+  cursor: pointer;
+}
+input[type="date"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 0.9;
+}
+/* An empty date reads as a placeholder, not as a value. */
+input[type="date"].empty::-webkit-datetime-edit {
+  color: #55556a;
+}
+
+/* A label beside its control, for the Self-identification selects: the same
+ * left-label, right-control line as the Yes/No rows (.qrow) above them. */
+.fgrid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+label.frow {
+  display: grid;
+  grid-template-columns: 104px 1fr;
+  align-items: center;
+  gap: 10px;
+}
+label.frow select {
+  margin-top: 0;
 }
 textarea {
   resize: vertical;

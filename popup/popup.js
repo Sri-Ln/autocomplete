@@ -174,10 +174,19 @@ async function loadProfile() {
   /* A profile saved before sponsorship was split has one answer for both. */
   const legacy = { needsSponsorshipNow: profile.needsSponsorship, needsSponsorshipFuture: profile.needsSponsorship };
   for (const key of PROFILE_SEG_FIELDS) setSeg(key, profile[key] || legacy[key]);
+  paintDate();
   paintVisaCount();
   paintExperience(profile);
   paintQuick(profile);
 }
+
+/* An empty date shows "mm/dd/yyyy" in full colour; dim it like a placeholder.
+ * A half-typed one is badInput, not empty, and stays bright. */
+function paintDate() {
+  const el = $('startDate');
+  el.classList.toggle('empty', !el.value && !el.validity.badInput);
+}
+$('startDate').addEventListener('input', paintDate);
 
 /* ------------------------------------------------------------------ */
 /* quick copy                                                          */
@@ -237,7 +246,7 @@ function paintQuick(profile) {
   $('quickAuth').textContent = chips.length
     ? [auth && `Authorized: ${auth}`, sponsor && `Needs sponsorship: ${sponsor}`]
         .filter(Boolean).join(' · ')
-    : 'Add links (Experience) or a visa explanation (Profile) to copy them here.';
+    : 'Links and visa text you save appear here.';
 }
 
 /* ------------------------------------------------------------------ */
