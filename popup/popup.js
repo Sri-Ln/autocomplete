@@ -237,7 +237,7 @@ function paintQuick(profile) {
   $('quickAuth').textContent = chips.length
     ? [auth && `Authorized: ${auth}`, sponsor && `Needs sponsorship: ${sponsor}`]
         .filter(Boolean).join(' · ')
-    : 'Save your links (Experience tab) and visa explanation (Profile tab) to copy them from here.';
+    : 'Add links (Experience) or a visa explanation (Profile) to copy them here.';
 }
 
 /* ------------------------------------------------------------------ */
