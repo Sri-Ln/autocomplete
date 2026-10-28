@@ -268,19 +268,38 @@
    * profile (standard fields, or a rule fromProfile accepts); a ticked box or
    * chosen option is never changed. A question that cannot be answered is listed
    * only if required.
+   *
+   * An answer can reveal a follow-up (authorized to work → sponsorship), so the
+   * page is read again after each pass until no new question appears.
    */
   async function fillPage({ profile }) {
     const report = { section: 'Application', filled: [], replaced: [], already: [], kept: [],
                      left: [], failed: [], signed: [], added: 0, note: '' };
-    const fields = readFields();
-    if (!fields.length) {
+    if (!readFields().length) {
       report.note = 'no questions found on this page';
       return report;
     }
     const ctx = { profile, learned: await loadAnswers(), company: AF.currentCompany(), selfId: true, today: new Date() };
+    const seen = new Set();
+    for (let pass = 0; pass < 4; pass++) {
+      if (pass) await new Promise((r) => setTimeout(r, 300));
+      if (!(await fillPass(readFields(), seen, ctx, profile, report))) break;
+    }
+    return report;
+  }
 
+  /** Answer the fields not handled by an earlier pass → whether there were any. */
+  async function fillPass(fields, seen, ctx, profile, report) {
+    let any = false;
     let previous = null;
     for (const f of fields) {
+      const key = `${f.fieldId}\u0000${f.question}`;
+      if (seen.has(key)) {
+        previous = currentValue(f) || null;
+        continue;
+      }
+      seen.add(key);
+      any = true;
       const label = clip(Q.questionCore(f.question));
       const current = currentValue(f);
 
@@ -324,7 +343,7 @@
       }
       previous = (done ? decision.answer : current) || null;
     }
-    return report;
+    return any;
   }
 
   /** The page's answers as the user leaves it, for remember() at Submit. Not

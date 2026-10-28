@@ -315,6 +315,29 @@
         check('work authorization basis visa picks the visa row', yval('x-wa').startsWith('Yes - I have US work authorization via a non-immigrant visa'), true);
         check('optional empty file field is listed', r8.left.includes('Cover Letter — attach it yourself'), true);
         extra.remove();
+
+        /* a follow-up the page reveals only once an earlier question is answered */
+        reset();
+        const gate = document.createElement('div');
+        gate.innerHTML = `<div data-field-path="x-gate"><fieldset class="ashby-application-form-input-radio-group"><label class="_h _required_x1 _l ashby-application-form-question-title" for="x-gate">Are you legally authorized to work in the United States?</label>${
+          ['Yes', 'No'].map((t, i) => `<div class="ashby-application-form-input-radio-group-option"><span><input type="radio" id="form1_x-gate-labeled-radio-${i}" name="form1_x-gate"></span><label for="form1_x-gate-labeled-radio-${i}" class="ashby-application-form-input-radio-group-option-label">${t}</label></div>`).join('')
+        }</fieldset></div>`;
+        root.append(gate);
+        gate.querySelector('input').addEventListener('change', () => setTimeout(() => {
+          const later = document.createElement('div');
+          later.innerHTML = '<div class="ashby-application-form-field-entry" data-field-path="x-later"><label class="_h _required_x1 _l ashby-application-form-question-title" for="x-later">Will you now, or in the future, require employer immigration sponsorship (e.g., H-1B)?</label><div class="ashby-application-form-input-yesno"><button type="button" class="ashby-application-form-input-yesno-option" aria-pressed="false" data-option="yes">Yes</button><button type="button" class="ashby-application-form-input-yesno-option" aria-pressed="false" data-option="no">No</button></div></div>';
+          for (const btn of later.querySelectorAll('button')) {
+            btn.addEventListener('click', () => { for (const b of later.querySelectorAll('button')) b.setAttribute('aria-pressed', String(b === btn)); });
+          }
+          gate.append(later);
+        }, 50));
+        const r10 = await form.fillPage({ profile: { ...profile, needsSponsorshipFuture: 'yes' } });
+        const zf = form.readFields();
+        const zval = (id) => { const f = zf.find((x) => x.fieldId === id); return f ? form.currentValue(f) : undefined; };
+        check('gate question answered', zval('x-gate'), 'Yes');
+        check('revealed follow-up filled', [zval('x-later'), has(r10.filled, 'sponsorship')], ['Yes', true]);
+        check('earlier fields not filled twice', r10.filled.filter((l) => l === 'Name').length, 1);
+        gate.remove();
       };
 
       fillChecks().catch((err) => lines.push(` FAIL  threw: ${err?.stack ?? err}`)).then(() => {
