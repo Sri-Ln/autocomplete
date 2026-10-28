@@ -174,8 +174,14 @@
         const val = (id) => form.currentValue(fields.find((f) => f.fieldId === id));
 
         reset();
+        const scrolls = [];
+        const realScroll = Element.prototype.scrollIntoView;
+        Element.prototype.scrollIntoView = function () { scrolls.push(this); };
         const t0 = performance.now();
         const r = await form.fillPage({ profile });
+        Element.prototype.scrollIntoView = realScroll;
+        check('scrolls once, to the first outlined question', scrolls.map((w) => w.getAttribute('data-field-path')),
+          [document.querySelector('[data-af-needs-you]')?.getAttribute('data-field-path')]);
         const ms = Math.round(performance.now() - t0);
         window.__report = r;
         check('report has the describeReport shape', Object.keys(r).sort(), ['added', 'already', 'failed', 'filled', 'kept', 'left', 'marked', 'note', 'replaced', 'section', 'signed']);

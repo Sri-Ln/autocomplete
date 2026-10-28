@@ -288,11 +288,14 @@
       if (!(await AF.waitFor(() => readFields().some((f) => !seen.has(fieldKey(f))), 1500))) break;
       await fillPass(readFields(), seen, ctx, profile, report);
     }
+    /* Scrolled only now: filling later questions moves the page and would
+     * cancel a scroll started mid-fill. */
+    document.querySelector(`[${MARK}]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
     return report;
   }
 
-  /* A question Fill could not answer is outlined on the page, and the first
-   * one scrolled into view, so "N need you" points somewhere. The outline
+  /* A question Fill could not answer is outlined on the page (fillPage then
+   * scrolls to the first), so "N need you" points somewhere. The outline
    * goes once the user touches the question. */
   const MARK = 'data-af-needs-you';
   function markForUser(wrap, report) {
@@ -305,7 +308,6 @@
       for (const t of ['input', 'change', 'click']) wrap.removeEventListener(t, clear, true);
     };
     for (const t of ['input', 'change', 'click']) wrap.addEventListener(t, clear, true);
-    if (!report.marked) wrap.scrollIntoView({ block: 'center', behavior: 'smooth' });
     report.marked = true;
   }
 
