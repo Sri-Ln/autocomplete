@@ -517,6 +517,39 @@ code {
   color: #f09a9a;
 }
 
+/* The autosave status: a small pill in the corner that fades, rather than a
+ * toast per keystroke-pause. Opacity, not [hidden], so it can fade. */
+.save-status {
+  position: fixed;
+  right: 14px;
+  bottom: 14px;
+  max-width: calc(100% - 28px);
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  background: #16281f;
+  color: #7fd6a6;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.18s, transform 0.18s;
+  pointer-events: none;
+}
+.save-status.show {
+  opacity: 1;
+  transform: none;
+}
+.save-status.err {
+  background: #2b1717;
+  color: #f09a9a;
+}
+
+/* A box the autosave skipped because the browser rejects its value. */
+input.invalid,
+input.invalid:focus {
+  border-color: var(--danger);
+}
+
 /* ── experience tab ──────────────────────────────────────────────────
  * Education cards and language cards. Both reuse .card and .stack; .tight
  * closes the gap inside a card so one entry reads as one block, and .grid3 is

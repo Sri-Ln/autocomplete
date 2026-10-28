@@ -355,8 +355,6 @@
           Used only on Workday's Voluntary Disclosures and Self Identify pages,
           and only as you set it here. Never learned from a page.
         </p>
-
-        <button class="primary" id="saveProfileBtn">Save profile</button>
       </div>
 
       <!-- ---- experience (My Experience page) ---- -->
@@ -443,8 +441,6 @@
         <label>GitHub<input type="text" id="web_github" placeholder="github.com/…" /></label>
         <label>Portfolio<input type="text" id="web_portfolio" /></label>
         <label>Other<input type="text" id="web_other" /></label>
-
-        <button class="primary" id="saveExperienceBtn">Save experience</button>
       </div>
 
       <!-- ---- settings ---- -->
@@ -510,6 +506,7 @@
     </section>
 
     <div id="toast" class="toast" hidden></div>
+    <div id="saveStatus" class="save-status" role="status" aria-live="polite"></div>
 
     <script src="popup.js"></script>
   </body>

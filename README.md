@@ -107,7 +107,8 @@ company you have never applied to fills on the first click. Add a *host override
 only if one company's password rules force a different password there.
 
 **Profile.** Name, phone, address. Used on the application form (My Information),
-not on the signup page.
+not on the signup page. The Profile and Experience tabs save as you type; only
+the Login tab has a Save button.
 
 **Visa status explanation.** A paragraph, for applications that ask you to *explain*
 your visa status in prose rather than Yes/No. That question does not appear on My

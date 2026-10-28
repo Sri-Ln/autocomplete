@@ -63,6 +63,7 @@ function toast(text, kind = 'info') {
   el.textContent = text;
   el.className = 'toast ' + kind;
   el.hidden = false;
+  $('saveStatus').classList.remove('show'); // same corner; the toast wins
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => (el.hidden = true), 2600);
 }
@@ -153,15 +154,16 @@ for (const tab of document.querySelectorAll('.tab')) {
 /**
  * Last profile known to be in storage.
  *
- * The visa box saves itself without the rest of the form (see below), and
- * saveProfile writes the whole object — so it needs a base to patch that is not
- * "whatever is currently typed into the other boxes". The popup is the only
- * writer, so a cache taken at load stays correct for its lifetime.
+ * The Profile and Experience tabs save separately (see autosave below), and
+ * saveProfile writes the whole object — so each needs a base to patch that is
+ * not "whatever is typed into the other tab". The popup is the only writer, so
+ * a cache taken at load stays correct for its lifetime.
  */
 let storedProfile = {};
 
 async function loadProfile() {
   const { profile } = await send({ type: 'getProfile' });
+  cancelAutosave();
   storedProfile = profile;
   visaSaved = profile.visaExplanation ?? '';
 
@@ -268,23 +270,7 @@ $('copyVisaBtn').addEventListener('click', async () => {
   }
 });
 
-/**
- * The visa box saves itself.
- *
- * Every other field on this tab is a line you finish in a second; this one is a
- * paragraph you write, read back, and then close the popup on. There is no page
- * to navigate away from and no "are you sure" — the popup just vanishes, and an
- * unclicked *Save profile* takes the paragraph with it. So it behaves like the
- * Settings toggles, which have always written on change.
- *
- * It saves ONLY itself: a half-typed name in another box is not an instruction
- * to save that name, so the patch goes onto `storedProfile`, not onto the form.
- */
-const VISA_DEBOUNCE_MS = 500;
-
-let visaTimer;
-let visaSaved = '';             // the value currently in storage
-let visaQueue = Promise.resolve(); // serialises saves; typing outruns storage
+let visaSaved = ''; // the value currently in storage
 
 /** state: 'saved' | 'unsaved' | 'saving' — inferred from the value if omitted. */
 function paintVisaCount(state) {
@@ -296,94 +282,16 @@ function paintVisaCount(state) {
     : '';
 }
 
-/**
- * Write the visa text now, if it differs from what is stored.
- *
- * Called from the close handlers too, where nothing after the `send` will run —
- * the popup's JS context is already going away. That is fine: the message has
- * left for the service worker by then, and the reply is only a toast.
- */
-function flushVisa() {
-  clearTimeout(visaTimer);
-
-  const text = $('visaExplanation').value;
-  if (text === visaSaved) return;
-
-  paintVisaCount('saving');
-  const profile = { ...storedProfile, visaExplanation: text };
-
-  visaQueue = visaQueue
-    .then(async () => {
-      const res = await send({ type: 'saveProfile', profile });
-      if (!res?.ok) {
-        paintVisaCount('unsaved');
-        return toast(res?.error ?? 'Could not save the explanation.', 'err');
-      }
-      storedProfile = profile;
-      visaSaved = text;
-      paintVisaCount();
-      paintQuick(profile);
-      // Open tabs cache the profile for the pill; tell them it moved.
-      await broadcast({ type: 'profileChanged' });
-    })
-    .catch(() => {});
-}
-
-$('visaExplanation').addEventListener('input', () => {
-  paintVisaCount();
-  clearTimeout(visaTimer);
-  visaTimer = setTimeout(flushVisa, VISA_DEBOUNCE_MS);
-});
-
-/* Leaving the field is a finished thought — don't wait out the debounce. */
-$('visaExplanation').addEventListener('change', flushVisa);
-
-/* Closing the popup. Both events are listened for because which one a popup
- * gets on dismissal is not something to bet a paragraph on. */
-window.addEventListener('pagehide', flushVisa);
-document.addEventListener('visibilitychange', flushVisa);
-
-$('saveProfileBtn').addEventListener('click', async () => {
-  /* Starts from what is stored, not from nothing. saveProfile writes the whole
-   * object and the worker whitelists every known key, so a key missing here is
-   * a key WIPED — and the Experience tab's fields are not on this tab. */
-  const profile = { ...storedProfile };
-  for (const key of PROFILE_FIELDS) profile[key] = $(key).value;
-  for (const key of PROFILE_SEG_FIELDS) profile[key] = segValue(key);
-  delete profile.needsSponsorship; // split into Now / Future; a later "–" must not bring it back
-  for (const key of PROFILE_LIST_FIELDS) {
-    profile[key] = $(key)
-      .value.split('\n')
-      .map((s) => s.trim())
-      .filter(Boolean);
-  }
-
-  // This writes the visa text too, so a pending autosave has nothing left to do.
-  clearTimeout(visaTimer);
-
-  const res = await send({ type: 'saveProfile', profile });
-  toast(res.ok ? 'Profile saved.' : (res.error ?? 'Save failed.'), res.ok ? 'ok' : 'err');
-
-  if (res.ok) {
-    storedProfile = profile;
-    visaSaved = profile.visaExplanation;
-    paintVisaCount(); // clears the "unsaved" marker
-    paintQuick(profile);
-    // Open tabs cache the profile for the pill; tell them it moved.
-    await broadcast({ type: 'profileChanged' });
-  }
-});
+$('visaExplanation').addEventListener('input', () => paintVisaCount());
 
 /* ------------------------------------------------------------------ */
 /* experience — the My Experience page                                 */
 /* ------------------------------------------------------------------ */
 
 /**
- * Education, languages, skills and links, on their own tab with their own Save.
- *
- * Saved separately for the reason the visa box is: a half-typed name on the
- * Profile tab is not an instruction to save that name. "Save experience"
- * patches these keys onto `storedProfile` and leaves the rest as stored.
+ * Education, languages, skills and links, on their own tab, saved on their own:
+ * the autosave below patches these keys onto `storedProfile` and leaves the
+ * rest as stored.
  *
  * Ladders (degree, field of study) are one rung per line; language levels are
  * semantic values from a segmented control, never free text — the page maps
@@ -539,22 +447,153 @@ $('addLangBtn').addEventListener('click', () => {
   card.querySelector('input').focus();
 });
 
-$('saveExperienceBtn').addEventListener('click', async () => {
-  const profile = { ...storedProfile, ...readExperience() };
-  const res = await send({ type: 'saveProfile', profile });
-  toast(res?.ok ? 'Experience saved.' : (res?.error ?? 'Save failed.'), res?.ok ? 'ok' : 'err');
-  if (!res?.ok) return;
+/* ------------------------------------------------------------------ */
+/* autosave — the Profile and Experience tabs                          */
+/* ------------------------------------------------------------------ */
 
-  storedProfile = profile;
-  // Repaint from storage: drops empty language cards and shows the cleaned ladders.
-  const fresh = await send({ type: 'getProfile' });
-  if (fresh?.profile) {
-    storedProfile = fresh.profile;
-    paintExperience(fresh.profile);
+/**
+ * Both tabs save themselves; there is no Save button to forget.
+ *
+ * The popup vanishes on close with no "are you sure", and both panels are long
+ * enough that their Save buttons sat out of sight. So typing saves after a
+ * short pause, a pick — select, date, segment, a language removed — or leaving
+ * a box saves at once, and closing the popup flushes whatever is pending.
+ *
+ * Each tab sends exactly what its old button sent: one saveProfile with the
+ * whole object, its own keys patched onto `storedProfile`, so neither tab's
+ * save carries the other's half-typed boxes. Saves run one at a time and build
+ * their object when their turn comes, so back-to-back saves from both tabs
+ * each start from the other's result instead of a stale copy.
+ */
+const AUTOSAVE_MS = 500;
+
+const saveTimer = { profile: 0, experience: 0 };
+const dirty = { profile: false, experience: false };
+let saveQueue = Promise.resolve();
+
+/** The Profile tab as the old Save profile button built it. */
+function readProfile() {
+  /* Starts from what is stored, not from nothing. saveProfile writes the whole
+   * object and the worker whitelists every known key, so a key missing here is
+   * a key WIPED — and the Experience tab's fields are not on this tab. */
+  const profile = { ...storedProfile };
+  const skipped = [];
+  for (const key of PROFILE_FIELDS) {
+    /* A box the browser rejects keeps what is stored. A half-typed date reads
+     * as '' and an email mid-word is a mismatch; saving either on a debounce
+     * would wipe a good value with a draft. */
+    const el = $(key);
+    const valid = el.validity.valid;
+    el.classList.toggle('invalid', !valid);
+    if (valid) profile[key] = el.value;
+    else skipped.push(fieldLabel(el));
   }
-  paintQuick(storedProfile);
-  await broadcast({ type: 'profileChanged' });
-});
+  for (const key of PROFILE_SEG_FIELDS) profile[key] = segValue(key);
+  delete profile.needsSponsorship; // split into Now / Future; a later "–" must not bring it back
+  for (const key of PROFILE_LIST_FIELDS) {
+    profile[key] = $(key)
+      .value.split('\n')
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+  return { profile, skipped };
+}
+
+const fieldLabel = (el) => {
+  const label = el.closest('label');
+  return (label?.querySelector('.qlabel') ?? label?.firstChild)?.textContent.trim() || el.id;
+};
+
+const BUILD = {
+  profile: readProfile,
+  experience: () => ({ profile: { ...storedProfile, ...readExperience() }, skipped: [] }),
+};
+
+/** An edit on `which` tab: save after the pause, or straight away if `now`. */
+function touch(which, now = false) {
+  dirty[which] = true;
+  clearTimeout(saveTimer[which]);
+  if (now) flush(which);
+  else saveTimer[which] = setTimeout(() => flush(which), AUTOSAVE_MS);
+}
+
+/**
+ * Write `which` tab now, if it has unsaved edits.
+ *
+ * Called from the close handlers too, where nothing after the `send` will run —
+ * the popup's JS context is already going away. That is fine: the message has
+ * left for the service worker by then, and the reply is only a status.
+ */
+function flush(which) {
+  clearTimeout(saveTimer[which]);
+  if (!dirty[which]) return;
+  dirty[which] = false;
+  if (which === 'profile') paintVisaCount('saving');
+
+  saveQueue = saveQueue
+    .then(async () => {
+      const { profile, skipped } = BUILD[which]();
+      // Leaving a box you already paused in fires `change` with nothing new.
+      if (!skipped.length && JSON.stringify(profile) === JSON.stringify(storedProfile)) {
+        return paintVisaCount();
+      }
+
+      const res = await send({ type: 'saveProfile', profile });
+      if (!res?.ok) {
+        dirty[which] = true; // tried again on the next edit, or on close
+        paintVisaCount('unsaved');
+        return toast(res?.error ?? 'Save failed.', 'err');
+      }
+      storedProfile = profile;
+      visaSaved = profile.visaExplanation ?? '';
+      paintVisaCount();
+      paintQuick(profile);
+      showSaved(skipped);
+      // Open tabs cache the profile for the pill; tell them it moved.
+      await broadcast({ type: 'profileChanged' });
+    })
+    .catch(() => {});
+}
+
+/** Drop pending edits — the form is about to be repainted from storage. */
+function cancelAutosave() {
+  for (const which of Object.keys(dirty)) {
+    clearTimeout(saveTimer[which]);
+    dirty[which] = false;
+  }
+  for (const el of document.querySelectorAll('.invalid')) el.classList.remove('invalid');
+}
+
+/**
+ * The quiet "Saved" in the corner. One element, its text replaced, so a burst
+ * of saves reads as one status rather than a stack of toasts.
+ */
+let savedTimer;
+function showSaved(skipped = []) {
+  const el = $('saveStatus');
+  el.textContent = skipped.length ? `${skipped.join(', ')}: not saved — check it` : 'Saved';
+  el.className = 'save-status show ' + (skipped.length ? 'err' : 'ok');
+  clearTimeout(savedTimer);
+  savedTimer = setTimeout(() => el.classList.remove('show'), skipped.length ? 3000 : 1400);
+}
+
+for (const which of ['profile', 'experience']) {
+  const panel = document.querySelector(`.panel[data-panel="${which}"]`);
+  panel.addEventListener('input', () => touch(which));
+  // A pick, or leaving a box: nothing more is coming, so don't wait.
+  panel.addEventListener('change', () => touch(which, true));
+  /* Segments and a language card's × are clicks, not input. The × click still
+   * reaches the panel after it removed its card: the path is fixed at dispatch. */
+  panel.addEventListener('click', (e) => {
+    if (e.target.closest('.seg button, .lang-head button')) touch(which, true);
+  });
+}
+
+/* Closing the popup. Both events are listened for because which one a popup
+ * gets on dismissal is not something to bet a paragraph on. */
+const flushAll = () => { flush('profile'); flush('experience'); };
+window.addEventListener('pagehide', flushAll);
+document.addEventListener('visibilitychange', flushAll);
 
 /* ------------------------------------------------------------------ */
 /* credentials                                                        */
