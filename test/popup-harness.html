@@ -92,6 +92,7 @@
           case 'forgetPick': await S.forgetPick(m.hostname, m.key); return { ok: true };
           case 'saveAnswers': await S.setAnswers(m.answers); return { ok: true };
           case 'savePick': await S.savePick(m.hostname, m.key, m.value); return { ok: true };
+          case 'wipe': await S.wipeAll(); return { ok: true };
 
           /* The state the feature actually ships in: manifest.json still holds
              the REPLACE_ME client id, so the popup must show setup steps and
@@ -113,12 +114,12 @@
       /* ---- mount the real popup --------------------------------------- */
 
       const host = document.getElementById('popupHost');
-      const html = await (await fetch('../popup/popup.html')).text();
+      const html = await (await fetch('../popup/popup.html', { cache: 'reload' })).text();
       const doc = new DOMParser().parseFromString(html, 'text/html');
 
       const css = document.createElement('link');
       css.rel = 'stylesheet';
-      css.href = '../popup/popup.css';
+      css.href = '../popup/popup.css?v=' + Date.now();
       document.head.append(css);
 
       // insertAdjacentHTML does not run scripts, so popup.js is appended by hand
@@ -219,24 +220,26 @@
         check('reopening paints the stored text', $('visaExplanation').value, VISA);
         check('with no unsaved marker', $('visaCount').textContent, `${VISA.length} characters · saved`);
 
-        /* ---- 6. per-company picks are listed, and forgettable one by one ---- */
+        /* ---- 6. no Answers tab: learned answers and picks are backend-only ----
+         * They still ride along in the backup (section 8) and are erased by
+         * Erase everything (section 10); the popup just has no view of them. */
 
-        await S.savePick('acme.wd5.myworkdayjobs.com', 'source', 'Acme Careers Website');
+        check('there is no Answers tab, panel or list',
+          [!!document.querySelector('.tab[data-tab="answers"]'),
+           !!document.querySelector('.panel[data-panel="answers"]'),
+           !!$('answersList'), !!$('picksList'), !!$('forgetAllBtn')],
+          [false, false, false, false, false]);
+        const visiblePanels = () => [...document.querySelectorAll('.panel')]
+          .filter((p) => !p.hidden).map((p) => p.dataset.panel);
+        const tabNames = [...document.querySelectorAll('.tab')].map((t) => t.dataset.tab);
+        check('the tabs left are Login, Profile, Experience, Settings', tabNames,
+          ['login', 'profile', 'experience', 'settings']);
+        const shown = [];
+        for (const t of document.querySelectorAll('.tab')) { t.click(); shown.push(visiblePanels()); }
+        check('and each tab still shows exactly its own panel', shown, tabNames.map((t) => [t]));
+        document.querySelector('.tab[data-tab="login"]').click();
+
         await S.savePick('globex.wd1.myworkdayjobs.com', 'source', 'LinkedIn');
-        await window.__afBoot();
-        await settle();
-        const pickRows = () => [...$('picksList').querySelectorAll('.item')]
-          .map((r) => r.querySelector('.email').textContent);
-        check("each company's pick is listed",
-          pickRows().sort(), ['How did you hear: Acme Careers Website', 'How did you hear: LinkedIn']);
-
-        const acmeRow = [...$('picksList').querySelectorAll('.item')]
-          .find((r) => r.textContent.includes('acme.wd5'));
-        acmeRow.querySelector('button').click();
-        await settle();
-        await settle();
-        check('forgetting one leaves the other', pickRows(), ['How did you hear: LinkedIn']);
-        check('and it is gone from storage', await S.getPicks('acme.wd5.myworkdayjobs.com'), {});
 
         /* ---- 7. the Experience tab saves only itself, and round-trips ----
          * Synthetic values. Ladders are one rung per line; levels come from the
@@ -339,6 +342,7 @@
 
         let picked = 0;
         $('importFile').addEventListener('click', (e) => { picked++; e.preventDefault(); });
+        created.length = 0; // a re-run from the button starts clean
         asPopup = true;
         $('importBtn').click();
         await settle();
@@ -375,6 +379,18 @@
         $('importReplace').click();
         await sleep(100); await settle();
         check('Replace applies the backup', [stored().firstName, $('importConfirm').hidden], ['Ada', true]);
+
+        /* ---- 10. Erase everything erases the answers and picks too ---- */
+
+        await S.setAnswers({ 'are you 18 or older': { answer: 'Yes', seen: 2 } });
+        await S.savePick('globex.wd1.myworkdayjobs.com', 'source', 'LinkedIn');
+        const realConfirm = window.confirm;
+        window.confirm = () => true;
+        $('wipeBtn').click();
+        await sleep(50); await settle();
+        window.confirm = realConfirm;
+        check('Erase everything leaves nothing on disk', Object.keys(disk), []);
+        check('remembered answers and picks included', [await S.getAnswers(), await S.listPicks()], [{}, {}]);
 
         const v = document.getElementById('verdict');
         v.className = failed ? 'fail' : 'pass';

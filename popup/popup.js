@@ -74,7 +74,7 @@ function toast(text, kind = 'info') {
 async function boot() {
   await paintVault();
   await Promise.all([
-    loadProfile(), loadCredentials(), loadSettings(), loadAnswers(), loadPicks(), loadGmail(),
+    loadProfile(), loadCredentials(), loadSettings(), loadGmail(),
   ]);
 }
 
@@ -557,126 +557,6 @@ $('saveExperienceBtn').addEventListener('click', async () => {
 });
 
 /* ------------------------------------------------------------------ */
-/* learned answers                                                     */
-/* ------------------------------------------------------------------ */
-
-async function loadAnswers() {
-  const res = await send({ type: 'getAnswers' });
-  const list = $('answersList');
-  list.innerHTML = '';
-
-  const entries = Object.entries(res.answers ?? {});
-  $('answersLabel').hidden = entries.length === 0;
-  $('forgetAllBtn').hidden = entries.length === 0;
-
-  if (!entries.length) {
-    const p = document.createElement('p');
-    p.className = 'fine';
-    p.textContent = 'Nothing remembered yet. Answer a question on an application and it will show up here.';
-    list.append(p);
-    return;
-  }
-
-  // Most-used first: those are the ones worth checking are right.
-  entries.sort((a, b) => (b[1].seen ?? 0) - (a[1].seen ?? 0));
-
-  for (const [signature, entry] of entries) {
-    const row = document.createElement('div');
-    row.className = 'item';
-
-    const who = document.createElement('div');
-    who.className = 'who';
-
-    const q = document.createElement('span');
-    q.className = 'scope';
-    q.textContent = signature;
-    q.title = signature;
-
-    const a = document.createElement('span');
-    a.className = 'email';
-    a.textContent = `${entry.answer} · seen ${entry.seen ?? 1}×`;
-
-    who.append(q, a);
-    row.append(who);
-
-    const del = document.createElement('button');
-    del.textContent = '×';
-    del.title = 'Forget this answer';
-    del.addEventListener('click', async () => {
-      await send({ type: 'forgetAnswer', signature });
-      loadAnswers();
-    });
-    row.append(del);
-
-    list.append(row);
-  }
-}
-
-$('forgetAllBtn').addEventListener('click', async () => {
-  if (!confirm('Forget every remembered answer? Your profile is unaffected.')) return;
-  await send({ type: 'saveAnswers', answers: {} });
-  loadAnswers();
-  toast('Answers cleared.', 'ok');
-});
-
-/* ------------------------------------------------------------------ */
-/* per-company picks                                                   */
-/* ------------------------------------------------------------------ */
-
-const PICK_LABELS = { source: 'How did you hear' };
-
-async function loadPicks() {
-  const res = await send({ type: 'listPicks' });
-  const list = $('picksList');
-  list.innerHTML = '';
-
-  const rows = Object.entries(res.picks ?? {}).flatMap(([host, keys]) =>
-    Object.entries(keys).map(([key, entry]) => ({ host, key, ...entry }))
-  );
-
-  if (!rows.length) {
-    const p = document.createElement('p');
-    p.className = 'fine';
-    p.textContent = 'Nothing yet. Submit a My Information page and its answer shows up here.';
-    list.append(p);
-    return;
-  }
-
-  rows.sort((a, b) => (b.updated ?? 0) - (a.updated ?? 0));
-
-  for (const { host, key, value } of rows) {
-    const row = document.createElement('div');
-    row.className = 'item';
-
-    const who = document.createElement('div');
-    who.className = 'who';
-
-    const scope = document.createElement('span');
-    scope.className = 'scope';
-    scope.textContent = host;
-    scope.title = host;
-
-    const val = document.createElement('span');
-    val.className = 'email';
-    val.textContent = `${PICK_LABELS[key] ?? key}: ${value}`;
-
-    who.append(scope, val);
-    row.append(who);
-
-    const del = document.createElement('button');
-    del.textContent = '×';
-    del.title = 'Forget this answer';
-    del.addEventListener('click', async () => {
-      await send({ type: 'forgetPick', hostname: host, key });
-      loadPicks();
-    });
-    row.append(del);
-
-    list.append(row);
-  }
-}
-
-/* ------------------------------------------------------------------ */
 /* credentials                                                        */
 /* ------------------------------------------------------------------ */
 
@@ -1049,9 +929,11 @@ async function broadcast(msg) {
 }
 
 $('wipeBtn').addEventListener('click', async () => {
-  if (!confirm('Erase your passphrase, profile, and all saved logins? This cannot be undone.')) {
+  if (!confirm('Erase your passphrase, profile, saved logins, remembered answers and per-company picks? This cannot be undone.')) {
     return;
   }
+  /* storage.wipeAll clears chrome.storage.local outright, so af_answers and
+   * af_picks go with everything else — they have no tab of their own now. */
   await send({ type: 'wipe' });
   boot();
 });

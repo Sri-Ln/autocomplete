@@ -33,7 +33,6 @@
         <button class="tab active" data-tab="login" role="tab">Login</button>
         <button class="tab" data-tab="profile" role="tab">Profile</button>
         <button class="tab" data-tab="experience" role="tab">Experience</button>
-        <button class="tab" data-tab="answers" role="tab">Answers</button>
         <button class="tab" data-tab="settings" role="tab">Settings</button>
       </nav>
 
@@ -446,31 +445,6 @@
         <label>Other<input type="text" id="web_other" /></label>
 
         <button class="primary" id="saveExperienceBtn">Save experience</button>
-      </div>
-
-      <!-- ---- learned answers ---- -->
-      <div class="panel" data-panel="answers" hidden>
-        <p class="fine">
-          Questions you've answered by hand, reused when the same question comes
-          up again. Stored locally — just the question and your answer, nothing
-          about which company asked it.
-        </p>
-        <p class="fine">
-          Questions naming a specific company are <b>never</b> stored here. "Have
-          you ever worked for X?" is worked out from your employer list instead,
-          so it stays correct company to company.
-        </p>
-        <div class="divider" id="answersLabel">Remembered</div>
-        <div id="answersList" class="list"></div>
-        <button class="danger" id="forgetAllBtn">Forget all answers</button>
-
-        <div class="divider">Per company</div>
-        <p class="fine">
-          "How did you hear about us?" is worded differently at every company,
-          so whatever you submit there is remembered for that company's site
-          and picked first next time.
-        </p>
-        <div id="picksList" class="list"></div>
       </div>
 
       <!-- ---- settings ---- -->
