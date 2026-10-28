@@ -1111,40 +1111,9 @@ $('exportBtn').addEventListener('click', async () => {
   toast('Exported. Keep the file somewhere private.', 'ok');
 });
 
-/**
- * Import cannot run inside the toolbar popup on Windows: the OS file picker
- * takes focus from the popup, Chrome closes or wedges it, and the change
- * handler never finishes (window.confirm has the same problem). So in the
- * popup the button opens this same page in a tab, where both work.
- *
- * getViews({ type: 'popup' }) rather than a window-size guess: it lists the
- * action popup's own window and nothing else, so a tab (or the test harness,
- * which stubs it) is never mistaken for one.
- */
-function inToolbarPopup() {
-  try {
-    return !!chrome.extension?.getViews?.({ type: 'popup' }).includes(window);
-  } catch {
-    return false;
-  }
-}
-
-$('importBtn').addEventListener('click', async () => {
-  if (!inToolbarPopup()) return $('importFile').click();
-  await chrome.tabs.create({ url: chrome.runtime.getURL('popup/popup.html#import') });
-  window.close();
-});
-
-/* Opened as `popup.html#import`: land on the Backup section with a hint. The
- * picker itself is not opened — a browser only allows that from a click. */
-function showImportIfAsked() {
-  if (location.hash !== '#import') return;
-  document.querySelector('.tab[data-tab="settings"]').click();
-  $('importHint').hidden = false;
-  $('importBtn').scrollIntoView?.({ block: 'center' });
-}
-window.__afShowImport = showImportIfAsked;
-showImportIfAsked();
+/* The picker opens in the popup itself. The confirmation is in the page
+ * (importConfirm), never window.confirm, which wedges the toolbar popup. */
+$('importBtn').addEventListener('click', () => $('importFile').click());
 
 /* ------------------------------------------------------------------ */
 /* résumé                                                              */
