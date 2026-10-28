@@ -447,20 +447,11 @@
 
         let resumePicked = 0;
         $('resumeFile').addEventListener('click', (e) => { resumePicked++; e.preventDefault(); });
+        asPopup = true; // the toolbar popup itself: the picker opens there, no tab
         created.length = 0;
-        asPopup = true;
         $('resumeBtn').click();
-        await settle();
-        check('in the toolbar popup, Choose file opens the page in a tab',
-          [created.map((c) => c.url), resumePicked], [['chrome-extension://fixture/popup/popup.html#resume'], 0]);
+        check('Choose file opens the picker in place, no tab', [resumePicked, created.length], [1, 0]);
         asPopup = false;
-        $('resumeBtn').click();
-        check('in a tab, it opens the file picker', resumePicked, 1);
-        location.hash = '#resume';
-        window.__afShowResume();
-        check('a tab opened with #resume shows the Experience tab, with a hint',
-          [document.querySelector('.panel[data-panel="experience"]').hidden, $('resumeHint').hidden], [false, false]);
-        history.replaceState(null, '', location.pathname + location.search);
 
         check('nothing saved yet', [$('resumeName').textContent, $('resumeRemoveBtn').hidden], ['No résumé saved', true]);
         const pickResume = async (f) => {
@@ -473,8 +464,8 @@
         await pickResume(new File(['%PDF-1.4 synthetic'], 'testy-resume.pdf', { type: 'application/pdf' }));
         check('a PDF is saved whole', [disk.af_resume?.name, atob(disk.af_resume?.data ?? '')], ['testy-resume.pdf', '%PDF-1.4 synthetic']);
         check('and shown by name, with Replace and Remove',
-          [$('resumeName').textContent, $('resumeBtn').textContent, $('resumeRemoveBtn').hidden, $('resumeHint').hidden],
-          ['testy-resume.pdf', 'Replace', false, true]);
+          [$('resumeName').textContent, $('resumeBtn').textContent, $('resumeRemoveBtn').hidden],
+          ['testy-resume.pdf', 'Replace', false]);
         await pickResume(new File(['x'], 'photo.png', { type: 'image/png' }));
         check('another kind of file is refused, the saved one kept', disk.af_resume?.name, 'testy-resume.pdf');
         check('the résumé is not in a backup', 'resume' in (await B.buildBackup()) || JSON.stringify(await B.buildBackup()).includes('PDF-1.4'), false);

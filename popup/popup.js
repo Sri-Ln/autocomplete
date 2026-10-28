@@ -1165,13 +1165,9 @@ async function loadResume() {
   $('resumeRemoveBtn').hidden = !r;
 }
 
-/* The file picker wedges the toolbar popup just as Import's does (see
- * inToolbarPopup), so there the button opens this page in a tab. */
-$('resumeBtn').addEventListener('click', async () => {
-  if (!inToolbarPopup()) return $('resumeFile').click();
-  await chrome.tabs.create({ url: chrome.runtime.getURL('popup/popup.html#resume') });
-  window.close();
-});
+/* The picker opens right here. The popup is the only place the saved résumé
+ * changes: a file attached on an application page is never taken from it. */
+$('resumeBtn').addEventListener('click', () => $('resumeFile').click());
 
 const readBase64 = (file) => new Promise((resolve, reject) => {
   const reader = new FileReader();
@@ -1187,7 +1183,6 @@ $('resumeFile').addEventListener('change', async (e) => {
   if (file.size > RESUME_MAX_BYTES) return toast('That file is over 5 MB.', 'err');
   const res = await send({ type: 'saveResume', name: file.name, fileType: file.type, data: await readBase64(file) });
   if (!res?.ok) return toast(res?.error ?? 'Could not save the résumé.', 'err');
-  $('resumeHint').hidden = true;
   await loadResume();
   toast('Résumé saved.', 'ok');
 });
@@ -1198,15 +1193,6 @@ $('resumeRemoveBtn').addEventListener('click', async () => {
   toast('Résumé removed.', 'ok');
 });
 
-/* Opened as `popup.html#resume`: land on the Résumé row with a hint. */
-function showResumeIfAsked() {
-  if (location.hash !== '#resume') return;
-  document.querySelector('.tab[data-tab="experience"]').click();
-  $('resumeHint').hidden = false;
-  $('resumeBtn').scrollIntoView?.({ block: 'center' });
-}
-window.__afShowResume = showResumeIfAsked;
-showResumeIfAsked();
 
 /* The parsed file waits here for the in-page Replace / Cancel. */
 let pendingImport = null;
