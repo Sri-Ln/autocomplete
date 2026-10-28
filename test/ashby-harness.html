@@ -187,7 +187,7 @@
         check('github', val('github-1'), 'https://github.example.com/testy');
         check('location option clicked', val('_systemfield_location'), 'Testville, ZZ');
         check('location list closed', combo.getAttribute('aria-expanded'), 'false');
-        check('location hit is quick', ms < 2500, true);
+        check('location hit is quick (plus the 1.5s wait for follow-ups)', ms < 4000, true);
         check('sponsorship No pressed', val('sponsor-1'), 'No');
         check('arbitration ticked', val('arb-1'), 'I acknowledge the Synthetic Arbitration Agreement.');
         check('arbitration is signed, not filled', [has(r.signed, 'Arbitration'), has(r.filled, 'Arbitration')], [true, false]);
@@ -330,7 +330,7 @@
             btn.addEventListener('click', () => { for (const b of later.querySelectorAll('button')) b.setAttribute('aria-pressed', String(b === btn)); });
           }
           gate.append(later);
-        }, 50));
+        }, 800)); // slower than the old fixed 300ms re-read
         const r10 = await form.fillPage({ profile: { ...profile, needsSponsorshipFuture: 'yes' } });
         const zf = form.readFields();
         const zval = (id) => { const f = zf.find((x) => x.fieldId === id); return f ? form.currentValue(f) : undefined; };

@@ -281,19 +281,24 @@
     }
     const ctx = { profile, learned: await loadAnswers(), company: AF.currentCompany(), selfId: true, today: new Date() };
     const seen = new Set();
-    for (let pass = 0; pass < 4; pass++) {
-      if (pass) await new Promise((r) => setTimeout(r, 300));
-      if (!(await fillPass(readFields(), seen, ctx, profile, report))) break;
+    await fillPass(readFields(), seen, ctx, profile, report);
+    /* A follow-up can take a moment to render, so wait for one (up to 1.5s)
+     * before deciding there is none. */
+    for (let pass = 1; pass < 4; pass++) {
+      if (!(await AF.waitFor(() => readFields().some((f) => !seen.has(fieldKey(f))), 1500))) break;
+      await fillPass(readFields(), seen, ctx, profile, report);
     }
     return report;
   }
+
+  const fieldKey = (f) => `${f.fieldId}\u0000${f.question}`;
 
   /** Answer the fields not handled by an earlier pass → whether there were any. */
   async function fillPass(fields, seen, ctx, profile, report) {
     let any = false;
     let previous = null;
     for (const f of fields) {
-      const key = `${f.fieldId}\u0000${f.question}`;
+      const key = fieldKey(f);
       if (seen.has(key)) {
         previous = currentValue(f) || null;
         continue;
