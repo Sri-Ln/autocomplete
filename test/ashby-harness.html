@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Ashby harness</title>
+    <style>
+      body { margin:0; padding:24px; background:#0b0b10; color:#e8e8ee; font:14px/1.5 -apple-system,"Segoe UI",Roboto,sans-serif; }
+      .page { max-width:620px; } label, legend { display:block; font-size:11px; color:#8a8a9c; }
+      fieldset { border:0; padding:0; margin:0 0 10px; }
+      input[type=text], input[type=email], input[type=tel], textarea { display:block; width:100%; box-sizing:border-box; margin:3px 0 8px; padding:6px 8px;
+        border-radius:7px; background:#0f0f15; border:1px solid #2c2c38; color:#e8e8ee; }
+      #verdict.pass { background:#12321f; } #verdict.fail { background:#3a1616; }
+      #verdict { margin:10px 0; padding:11px 13px; border-radius:8px; white-space:pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <h1>Ashby harness</h1>
+    <p>Reading the form: synthetic markup structured like the Ashby application page. Synthetic data only.</p>
+    <div id="verdict">running…</div>
+    <pre id="out"></pre>
+    <div id="root" class="page">
+      <div class="ashby-application-form-container">
+        <div class="ashby-application-form-autofill-uploader"><input type="file" id="autofill-file"></div>
+        <div class="ashby-application-form-field-entry" data-field-path="_systemfield_name"><label class="_h _required_x1 _l ashby-application-form-question-title" for="_systemfield_name">Name</label><input type="text" id="_systemfield_name" name="_systemfield_name" required class="ashby-application-form-input-text" value="Testy McTestface"></div>
+        <div class="ashby-application-form-field-entry" data-field-path="_systemfield_email"><label class="_h _required_x1 _l ashby-application-form-question-title" for="_systemfield_email">Email</label><input type="email" id="_systemfield_email" name="_systemfield_email" required class="ashby-application-form-input-text" value="testy@example.com"></div>
+        <div class="ashby-application-form-field-entry" data-field-path="phone-1"><label class="_h _required_x1 _l ashby-application-form-question-title" for="phone-1">Phone</label><input type="tel" id="phone-1" name="phone-1" required class="ashby-application-form-input-text" value=""><div class="ashby-application-form-texting-consent-description"><p>Check Yes or No to receive synthetic texts.</p><div><label><input type="radio" name="communicationConsent" value="given"><div><p><strong>Yes</strong> - I consent to receiving text messages</p></div></label><label><input type="radio" name="communicationConsent" value="notGiven" checked><div><p><strong>No</strong> - I do not consent to receiving text messages</p></div></label></div></div></div>
+        <div class="ashby-application-form-field-entry" data-field-path="_systemfield_location"><label class="_h _required_x1 _l ashby-application-form-question-title" for="_systemfield_location">Location</label><div><input class="ashby-application-form-input-autocomplete" placeholder="Start typing..." aria-autocomplete="list" aria-expanded="false" aria-haspopup="listbox" role="combobox" value=""><button type="button">v</button></div><ul role="listbox" id="fake-listbox"><li role="option">Testville, ZZ</li></ul></div>
+        <div class="ashby-application-form-field-entry" data-field-path="linkedin-1"><label class="_h _l ashby-application-form-question-title" for="linkedin-1">LinkedIn</label><input type="text" id="linkedin-1" name="linkedin-1" class="ashby-application-form-input-text" value=""></div>
+        <div class="ashby-application-form-field-entry" data-field-path="github-1"><label class="_h _l ashby-application-form-question-title" for="github-1">GitHub</label><input type="text" id="github-1" name="github-1" class="ashby-application-form-input-text" value=""></div>
+        <div class="ashby-application-form-field-entry" data-field-path="_systemfield_resume"><label class="_h _required_x1 _l ashby-application-form-question-title" for="_systemfield_resume">Resume</label><div class="ashby-application-form-input-file"><input type="file" id="_systemfield_resume" required><div class="ashby-application-form-input-file-item"><p class="ashby-application-form-input-file-item-name"><svg></svg><span>testy-resume.pdf</span></p></div></div></div>
+        <div class="ashby-application-form-field-entry" data-field-path="sponsor-1"><label class="_h _required_x1 _l ashby-application-form-question-title" for="sponsor-1">Will you now or in the future require sponsorship?</label><div class="ashby-application-form-input-yesno"><button type="button" class="ashby-application-form-input-yesno-option" aria-pressed="false" data-option="yes">Yes</button><button type="button" class="ashby-application-form-input-yesno-option" aria-pressed="true" data-option="no">No</button><input type="checkbox" tabindex="-1" name="sponsor-1"></div></div>
+        <div class="ashby-application-form-field-entry" data-field-path="office-1"><label class="_h _required_x1 _l ashby-application-form-question-title" for="office-1">Are you able to work in office 3 days a week?</label><div class="ashby-application-form-input-yesno"><button type="button" class="ashby-application-form-input-yesno-option" aria-pressed="false" data-option="yes">Yes</button><button type="button" class="ashby-application-form-input-yesno-option" aria-pressed="true" data-option="no">No</button><input type="checkbox" tabindex="-1" name="office-1"></div></div>
+        <div data-field-path="hear-1"><fieldset class="ashby-application-form-input-radio-group"><label class="_h _required_x1 _l ashby-application-form-question-title" for="hear-1">How did you hear about us?</label><div class="ashby-application-form-input-radio-group-option"><span><input type="radio" id="form1_hear-1-labeled-radio-0" name="form1_hear-1"></span><label for="form1_hear-1-labeled-radio-0" class="ashby-application-form-input-radio-group-option-label">Job board</label></div><div class="ashby-application-form-input-radio-group-option"><span><input type="radio" id="form1_hear-1-labeled-radio-1" name="form1_hear-1" checked></span><label for="form1_hear-1-labeled-radio-1" class="ashby-application-form-input-radio-group-option-label">Careers page</label></div></fieldset></div>
+        <div data-field-path="arb-1"><fieldset class="ashby-application-form-input-checkbox-group"><label class="_h _required_x1 _l ashby-application-form-question-title" for="arb-1">Arbitration</label><div class="ashby-application-form-input-checkbox-group-option"><span><input type="checkbox" id="form1_arb-1-labeled-checkbox-0" name="I acknowledge the Synthetic Arbitration Agreement." checked></span><label for="form1_arb-1-labeled-checkbox-0" class="ashby-application-form-input-checkbox-group-option-label">I acknowledge the Synthetic Arbitration Agreement.</label></div></fieldset></div>
+        <div class="ashby-application-form-field-entry" data-field-path="start-date"><label class="_h _required_x1 _l ashby-application-form-question-title" for="start-date">When could you start?</label><div class="react-datepicker-wrapper"><div class="react-datepicker__input-container"><input type="text" placeholder="Pick date..." class="ashby-application-form-input-date" required value="01/18/2027"></div></div></div>
+        <div class="ashby-application-form-field-entry" data-field-path="company-1"><label class="_h _required_x1 _l ashby-application-form-question-title" for="company-1">Have you worked at Initech Synthetic before?</label><input type="text" id="company-1" name="company-1" required class="ashby-application-form-input-text" value=""></div>
+        <button type="button" class="ashby-application-form-submit-button">Submit Application</button><textarea name="g-recaptcha-response" class="g-recaptcha-response"></textarea><div data-field-path="recaptcha-wrap"><textarea id="g-recaptcha-response-100000" name="g-recaptcha-response" class="g-recaptcha-response"></textarea></div>
+      </div>
+      <div class="ashby-survey-form-container"><div class="ashby-application-form-container">
+        <div data-field-path="_systemfield_eeoc_gender"><fieldset class="ashby-application-form-input-radio-group"><label class="_h _l ashby-application-form-question-title" for="_systemfield_eeoc_gender">Gender</label><div class="ashby-application-form-input-radio-group-option"><span><input type="radio" id="form1__systemfield_eeoc_gender-labeled-radio-0" name="form1__systemfield_eeoc_gender"></span><label for="form1__systemfield_eeoc_gender-labeled-radio-0" class="ashby-application-form-input-radio-group-option-label">Male</label></div><div class="ashby-application-form-input-radio-group-option"><span><input type="radio" id="form1__systemfield_eeoc_gender-labeled-radio-1" name="form1__systemfield_eeoc_gender"></span><label for="form1__systemfield_eeoc_gender-labeled-radio-1" class="ashby-application-form-input-radio-group-option-label">Female</label></div><div class="ashby-application-form-input-radio-group-option"><span><input type="radio" id="form1__systemfield_eeoc_gender-labeled-radio-2" name="form1__systemfield_eeoc_gender"></span><label for="form1__systemfield_eeoc_gender-labeled-radio-2" class="ashby-application-form-input-radio-group-option-label">Decline to self-identify</label></div></fieldset></div>
+        <div data-field-path="_systemfield_eeoc_race"><fieldset class="ashby-application-form-input-radio-group"><label class="_h _l ashby-application-form-question-title" for="_systemfield_eeoc_race">Race</label><div class="ashby-application-form-input-radio-group-option"><span><input type="radio" id="form1__systemfield_eeoc_race-labeled-radio-0" name="form1__systemfield_eeoc_race"></span><label for="form1__systemfield_eeoc_race-labeled-radio-0" class="ashby-application-form-input-radio-group-option-label">Group A</label></div><div class="ashby-application-form-input-radio-group-option"><span><input type="radio" id="form1__systemfield_eeoc_race-labeled-radio-1" name="form1__systemfield_eeoc_race"></span><label for="form1__systemfield_eeoc_race-labeled-radio-1" class="ashby-application-form-input-radio-group-option-label">Group B</label></div><div class="ashby-application-form-input-radio-group-option"><span><input type="radio" id="form1__systemfield_eeoc_race-labeled-radio-2" name="form1__systemfield_eeoc_race"></span><label for="form1__systemfield_eeoc_race-labeled-radio-2" class="ashby-application-form-input-radio-group-option-label">Decline to self-identify</label></div><div class="ashby-application-form-input-radio-group-option"><span><input type="radio" id="form1__systemfield_eeoc_race-labeled-radio-3" name="form1__systemfield_eeoc_race"></span><label for="form1__systemfield_eeoc_race-labeled-radio-3" class="ashby-application-form-input-radio-group-option-label">Asian (Not Hispanic or Latino)</label></div></fieldset></div>
+        <div data-field-path="_systemfield_eeoc_veteran_status"><fieldset class="ashby-application-form-input-radio-group"><label class="_h _l ashby-application-form-question-title" for="_systemfield_eeoc_veteran_status">Veteran status</label><div class="ashby-application-form-input-radio-group-option"><span><input type="radio" id="form1__systemfield_eeoc_veteran_status-labeled-radio-0" name="form1__systemfield_eeoc_veteran_status"></span><label for="form1__systemfield_eeoc_veteran_status-labeled-radio-0" class="ashby-application-form-input-radio-group-option-label">I am a veteran</label></div><div class="ashby-application-form-input-radio-group-option"><span><input type="radio" id="form1__systemfield_eeoc_veteran_status-labeled-radio-1" name="form1__systemfield_eeoc_veteran_status" checked></span><label for="form1__systemfield_eeoc_veteran_status-labeled-radio-1" class="ashby-application-form-input-radio-group-option-label">I am not a veteran</label></div></fieldset></div>
+        <div data-field-path="ethnicity-1"><fieldset class="ashby-application-form-input-checkbox-group"><label class="_h _l ashby-application-form-question-title" for="ethnicity-1">Which of these describe you?</label><div class="ashby-application-form-input-checkbox-group-option"><span><input type="checkbox" id="form1_ethnicity-1-labeled-checkbox-0" name="Option A" checked></span><label for="form1_ethnicity-1-labeled-checkbox-0" class="ashby-application-form-input-checkbox-group-option-label">Option A</label></div><div class="ashby-application-form-input-checkbox-group-option"><span><input type="checkbox" id="form1_ethnicity-1-labeled-checkbox-1" name="Option B"></span><label for="form1_ethnicity-1-labeled-checkbox-1" class="ashby-application-form-input-checkbox-group-option-label">Option B</label></div><div class="ashby-application-form-input-checkbox-group-option"><span><input type="checkbox" id="form1_ethnicity-1-labeled-checkbox-2" name="Option C" checked></span><label for="form1_ethnicity-1-labeled-checkbox-2" class="ashby-application-form-input-checkbox-group-option-label">Option C</label></div><div class="ashby-application-form-input-checkbox-group-option"><span><input type="checkbox" id="form1_ethnicity-1-labeled-checkbox-3" name="Asian"></span><label for="form1_ethnicity-1-labeled-checkbox-3" class="ashby-application-form-input-checkbox-group-option-label">Asian</label></div></fieldset></div>
+        <div data-field-path="age-1"><fieldset class="ashby-application-form-input-radio-group"><label class="_h _l ashby-application-form-question-title" for="age-1">What is your age range?</label><div class="ashby-application-form-input-radio-group-option"><span><input type="radio" id="form1_age-1-labeled-radio-0" name="form1_age-1"></span><label for="form1_age-1-labeled-radio-0" class="ashby-application-form-input-radio-group-option-label">18-24</label></div><div class="ashby-application-form-input-radio-group-option"><span><input type="radio" id="form1_age-1-labeled-radio-1" name="form1_age-1"></span><label for="form1_age-1-labeled-radio-1" class="ashby-application-form-input-radio-group-option-label">25-34</label></div><div class="ashby-application-form-input-radio-group-option"><span><input type="radio" id="form1_age-1-labeled-radio-2" name="form1_age-1"></span><label for="form1_age-1-labeled-radio-2" class="ashby-application-form-input-radio-group-option-label">35-44</label></div></fieldset></div>
+      </div></div>
+    </div>
+
+    <script src="../content/00-namespace.js"></script>
+    <script src="../content/react-set.js"></script>
+    <script src="../content/match.js"></script>
+    <script src="../content/questions.js"></script>
+    <script src="../content/filler.js"></script>
+    <script src="../content/registry.js"></script>
+    <script src="../sites/ashby.js"></script>
+
+    <script>
+      /* Page behaviour the real form has: pressed state on the yes/no buttons, and
+       * a location typeahead that lists cities as the user types. Kept synchronous
+       * so the driver's wait does not slow the hit case. */
+      const touched = { submit: 0, file: 0 };
+      document.querySelector('.ashby-application-form-submit-button').addEventListener('click', () => { touched.submit++; });
+      for (const f of document.querySelectorAll('input[type="file"]')) {
+        f.addEventListener('click', () => { touched.file++; });
+        f.addEventListener('change', () => { touched.file++; });
+      }
+      for (const btn of document.querySelectorAll('.ashby-application-form-input-yesno-option')) {
+        btn.addEventListener('click', () => {
+          for (const b of btn.parentElement.querySelectorAll('.ashby-application-form-input-yesno-option')) {
+            b.setAttribute('aria-pressed', String(b === btn));
+          }
+        });
+      }
+      const combo = document.querySelector('input[role="combobox"]');
+      const listbox = document.getElementById('fake-listbox');
+      let cities = ['Testville, ZZ'];
+      const closeList = () => { combo.setAttribute('aria-expanded', 'false'); listbox.innerHTML = ''; };
+      closeList();
+      combo.addEventListener('input', () => {
+        if (!combo.value) return closeList();
+        combo.setAttribute('aria-expanded', 'true');
+        listbox.innerHTML = cities.map((c) => `<li role="option">${c}</li>`).join('');
+      });
+      listbox.addEventListener('click', (e) => {
+        const o = e.target.closest('[role="option"]');
+        if (!o) return;
+        combo.value = o.textContent;
+        closeList();
+      });
+    </script>
+
+    <script>
+      const lines = [];
+      const check = (label, actual, expected) => {
+        const ok = JSON.stringify(actual) === JSON.stringify(expected);
+        lines.push(`${ok ? '  ok' : ' FAIL'}  ${label}${ok ? '' : `  got ${JSON.stringify(actual)} want ${JSON.stringify(expected)}`}`);
+      };
+      try {
+        const form = AF.sites.ashby.form;
+        const fields = form.readFields();
+        const by = (id) => fields.find((f) => f.fieldId === id);
+        const shape = (id) => { const f = by(id); return f && [f.widget, f.question, f.required]; };
+        const val = (id) => { const f = by(id); return f ? form.currentValue(f) : undefined; };
+
+        check('exposes the four functions', ['readFields', 'currentValue', 'fillPage', 'readAnswers'].map((k) => typeof form[k]), ['function', 'function', 'function', 'function']);
+        check('page order', fields.map((f) => f.fieldId), ['_systemfield_name', '_systemfield_email', 'phone-1', 'communicationConsent', '_systemfield_location',
+          'linkedin-1', 'github-1', '_systemfield_resume', 'sponsor-1', 'office-1', 'hear-1', 'arb-1', 'start-date', 'company-1',
+          '_systemfield_eeoc_gender', '_systemfield_eeoc_race', '_systemfield_eeoc_veteran_status', 'ethnicity-1', 'age-1']);
+        check('name', shape('_systemfield_name'), ['text', 'Name', true]);
+        check('email', shape('_systemfield_email'), ['text', 'Email', true]);
+        check('phone', shape('phone-1'), ['text', 'Phone', true]);
+        check('consent radios', shape('communicationConsent'), ['choice', 'I consent to receiving text messages', false]);
+        check('consent value', val('communicationConsent'), 'No - I do not consent to receiving text messages');
+        check('location', shape('_systemfield_location'), ['location', 'Location', true]);
+        check('linkedin', shape('linkedin-1'), ['text', 'LinkedIn', false]);
+        check('github', shape('github-1'), ['text', 'GitHub', false]);
+        check('resume', shape('_systemfield_resume'), ['file', 'Resume', true]);
+        check('resume file name', val('_systemfield_resume'), 'testy-resume.pdf');
+        check('sponsorship yes/no', shape('sponsor-1'), ['yesno', 'Will you now or in the future require sponsorship?', true]);
+        check('yes/no value', val('sponsor-1'), 'No');
+        check('office yes/no', shape('office-1'), ['yesno', 'Are you able to work in office 3 days a week?', true]);
+        check('hear about us', shape('hear-1'), ['choice', 'How did you hear about us?', true]);
+        check('radio value', val('hear-1'), 'Careers page');
+        check('arbitration checkbox', shape('arb-1'), ['checkbox', 'Arbitration I acknowledge the Synthetic Arbitration Agreement.', true]);
+        check('checkbox value', val('arb-1'), 'I acknowledge the Synthetic Arbitration Agreement.');
+        check('start date', shape('start-date'), ['date', 'When could you start?', true]);
+        check('date value', val('start-date'), '01/18/2027');
+        check('company text', shape('company-1'), ['text', 'Have you worked at Initech Synthetic before?', true]);
+        check('empty text value', val('company-1'), '');
+        check('text value', val('_systemfield_name'), 'Testy McTestface');
+        check('survey gender', shape('_systemfield_eeoc_gender'), ['choice', 'Gender', false]);
+        check('survey race', shape('_systemfield_eeoc_race'), ['choice', 'Race', false]);
+        check('survey veteran', shape('_systemfield_eeoc_veteran_status'), ['choice', 'Veteran status', false]);
+        check('veteran value', val('_systemfield_eeoc_veteran_status'), 'I am not a veteran');
+        check('ethnicity multi-checkbox is a choice', shape('ethnicity-1'), ['choice', 'Which of these describe you?', false]);
+        check('multi-checkbox value', val('ethnicity-1'), 'Option A, Option C');
+        check('age range', shape('age-1'), ['choice', 'What is your age range?', false]);
+        check('unanswered radio value', val('age-1'), '');
+        check('every wrap is an element in the page', fields.every((f) => f.wrap instanceof Element && document.contains(f.wrap)), true);
+        check('autofill uploader absent', fields.some((f) => f.wrap.closest('.ashby-application-form-autofill-uploader') || f.wrap.querySelector('#autofill-file')), false);
+        check('recaptcha textarea absent', fields.some((f) => f.wrap.querySelector('textarea[name="g-recaptcha-response"]')), false);
+        check('recaptcha-only wrap yields no field', fields.some((f) => f.fieldId === 'recaptcha-wrap'), false);
+      } catch (err) {
+        lines.push(` FAIL  threw: ${err?.message ?? err}`);
+      }
+
+      /* ---- filling and learning ---- */
+      const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const soon = new Date(Date.now() + 30 * 86400000);
+      const mmdd = `${String(soon.getMonth() + 1).padStart(2, '0')}/${String(soon.getDate()).padStart(2, '0')}/${soon.getFullYear()}`;
+      const profile = {
+        firstName: 'Testy', lastName: 'McTestface', phone: '555-0100', email: 'testy@example.com',
+        city: 'Testville', state: 'ZZ', websites: { linkedin: 'https://linkedin.example.com/in/testy', github: 'https://github.example.com/testy', portfolio: '', other: '' },
+        eeoGender: 'female', eeoEthnicity: 'asian', eeoVeteran: 'notVeteran',
+        startDate: iso(soon), workAuthorized: 'yes', needsSponsorshipNow: 'no', employers: [],
+      };
+      const resumeItem = document.querySelector('.ashby-application-form-input-file-item');
+      const resumeHome = resumeItem.parentElement;
+      /* Back to a blank form: nothing chosen, nothing typed, no résumé attached. */
+      const reset = () => {
+        for (const i of document.querySelectorAll('#root input[type="radio"], #root input[type="checkbox"]')) i.checked = false;
+        for (const i of document.querySelectorAll('#root input[type="text"], #root input[type="email"], #root input[type="tel"], #root input[role="combobox"]')) i.value = '';
+        for (const b of document.querySelectorAll('.ashby-application-form-input-yesno-option')) b.setAttribute('aria-pressed', 'false');
+        resumeItem.remove();
+        closeList();
+        cities = ['Testville, ZZ'];
+        touched.submit = 0; touched.file = 0;
+      };
+      const has = (list, text) => list.some((x) => x.includes(text));
+      const click = (sel) => document.querySelector(sel).click();
+
+      const fillChecks = async () => {
+        const form = AF.sites.ashby.form;
+        const fields = form.readFields();
+        const val = (id) => form.currentValue(fields.find((f) => f.fieldId === id));
+
+        reset();
+        const scrolls = [];
+        const realScroll = Element.prototype.scrollIntoView;
+        Element.prototype.scrollIntoView = function () { scrolls.push(this); };
+        const t0 = performance.now();
+        const r = await form.fillPage({ profile });
+        Element.prototype.scrollIntoView = realScroll;
+        check('scrolls once, to the first outlined question', scrolls.map((w) => w.getAttribute('data-field-path')),
+          [document.querySelector('[data-af-needs-you]')?.getAttribute('data-field-path')]);
+        const ms = Math.round(performance.now() - t0);
+        window.__report = r;
+        check('report has the describeReport shape', Object.keys(r).sort(), ['added', 'already', 'failed', 'filled', 'kept', 'left', 'marked', 'note', 'replaced', 'section', 'signed']);
+        check('section', r.section, 'Application');
+        check('name', val('_systemfield_name'), 'Testy McTestface');
+        check('email', val('_systemfield_email'), 'testy@example.com');
+        check('phone', val('phone-1'), '555-0100');
+        check('linkedin', val('linkedin-1'), 'https://linkedin.example.com/in/testy');
+        check('github', val('github-1'), 'https://github.example.com/testy');
+        check('location option clicked', val('_systemfield_location'), 'Testville, ZZ');
+        check('location list closed', combo.getAttribute('aria-expanded'), 'false');
+        check('location hit is quick (plus the 1.5s wait for follow-ups)', ms < 4000, true);
+        check('sponsorship No pressed', val('sponsor-1'), 'No');
+        check('arbitration ticked', val('arb-1'), 'I acknowledge the Synthetic Arbitration Agreement.');
+        check('arbitration is signed, not filled', [has(r.signed, 'Arbitration'), has(r.filled, 'Arbitration')], [true, false]);
+        check('consent radio Yes', val('communicationConsent').startsWith('Yes'), true);
+        check('start date', val('start-date'), mmdd);
+        check('gender Female', val('_systemfield_eeoc_gender'), 'Female');
+        check('race Asian', val('_systemfield_eeoc_race'), 'Asian (Not Hispanic or Latino)');
+        check('veteran', /not a (protected )?veteran/.test(val('_systemfield_eeoc_veteran_status')), true);
+        check('ethnicity checkbox Asian', val('ethnicity-1'), 'Asian');
+        check('age range untouched', val('age-1'), '');
+        check('office question left', has(r.left, 'Are you able to work in office'), true);
+        /* The brief expected this company text question in `left`. The existing
+         * formerEmployee rule answers it "No" (employers is empty), and nothing
+         * keeps a Yes/No default out of a text box for a rule without `yesNo`, so
+         * that is what is asserted. Reported as a concern, not changed here. */
+        check('company question answered by formerEmployee', [has(r.filled, 'Initech'), val('company-1')], [true, 'No']);
+        check('resume not mentioned', [...r.left, ...r.failed].some((l) => /resume/i.test(l)), false);
+        const marked = [...document.querySelectorAll('[data-af-needs-you]')].map((w) => w.getAttribute('data-field-path'));
+        check('unanswered question outlined, report says so', [marked.includes('office-1'), r.marked], [true, true]);
+        check('nothing else outlined', marked.length, r.left.length + r.failed.length);
+        check('office untouched', val('office-1'), '');
+        click('[data-field-path="office-1"] button[data-option="no"]');
+        check('outline goes once the user answers', document.querySelector('[data-field-path="office-1"]').hasAttribute('data-af-needs-you'), false);
+        check('file inputs and uploader untouched', touched.file, 0);
+        check('submit button not clicked', touched.submit, 0);
+        check('nothing failed', r.failed, []);
+
+        /* a page already holding answers */
+        reset();
+        document.getElementById('_systemfield_name').value = 'Parsed Name';
+        document.getElementById('form1_hear-1-labeled-radio-1').checked = true;
+        const r2 = await form.fillPage({ profile });
+        check('prefilled name replaced', has(r2.replaced, 'Name'), true);
+        check('prefilled name now the profile name', val('_systemfield_name'), 'Testy McTestface');
+        check('chosen option kept', val('hear-1'), 'Careers page');
+        check('chosen option reported already', has(r2.already, 'How did you hear'), true);
+
+        /* the location list offers no match */
+        reset();
+        cities = ['Elsewhere, ZZ'];
+        const r3 = await form.fillPage({ profile });
+        check('location miss clears the input', combo.value, '');
+        check('location miss is left', r3.left.includes('Location — pick it yourself'), true);
+
+        /* a pressed yes/no is the user's answer: kept, never re-clicked */
+        reset();
+        click('[data-field-path="sponsor-1"] button[data-option="yes"]');
+        const r4 = await form.fillPage({ profile });
+        check('pressed yes/no kept', val('sponsor-1'), 'Yes');
+        check('pressed yes/no reported already', has(r4.already, 'sponsorship'), true);
+
+        /* a value already equal to the answer is "already", not replaced */
+        reset();
+        document.querySelector('.ashby-application-form-input-date').value = mmdd;
+        const r5 = await form.fillPage({ profile });
+        check('equal date is already', has(r5.already, 'When could you start'), true);
+        check('equal date not filled or replaced', [has(r5.filled, 'When could you start'), has(r5.replaced, 'When could you start')], [false, false]);
+
+        /* a set location is left alone (a typeahead rewrites its text) */
+        reset();
+        combo.value = 'Elsewhere, ZZ';
+        const r6 = await form.fillPage({ profile });
+        check('prefilled location unchanged', combo.value, 'Elsewhere, ZZ');
+        check('prefilled location already', has(r6.already, 'Location'), true);
+
+        /* an optional question with no matching option is not listed */
+        reset();
+        const r7 = await form.fillPage({ profile: { ...profile, eeoGender: 'nonbinary' } });
+        check('optional unmatched choice left blank', val('_systemfield_eeoc_gender'), '');
+        check('optional unmatched choice not listed', has(r7.left, 'Gender'), false);
+
+        /* learning at Submit */
+        reset();
+        resumeHome.append(resumeItem);
+        document.getElementById('_systemfield_name').value = 'Testy McTestface';
+        document.getElementById('_systemfield_email').value = 'testy@example.com';
+        combo.value = 'Testville, ZZ';
+        document.querySelector('.ashby-application-form-input-date').value = '01/18/2027';
+        click('label[for="form1_hear-1-labeled-radio-0"]');
+        const learn = form.readAnswers();
+        check('readAnswers has only the hand answer', learn.map((a) => [a.fieldId, a.question, a.answer, a.widget]),
+          [['hear-1', 'How did you hear about us?', 'Job board', 'choice']]);
+
+        /* a pressed yes/no is learned as a choice, so sign-off yes/no is refused */
+        click('[data-field-path="office-1"] button[data-option="yes"]');
+        check('readAnswers yes/no entry has widget choice',
+          form.readAnswers().find((a) => a.fieldId === 'office-1')?.widget, 'choice');
+
+        /* long questions that merely mention an email, LinkedIn or a website are not profile rows */
+        reset();
+        const root = document.querySelector('.ashby-application-form-container');
+        const extra = document.createElement('div');
+        const textField = (id, title) => `<div class="ashby-application-form-field-entry" data-field-path="${id}"><label class="_h _l ashby-application-form-question-title" for="${id}">${title}</label><input type="text" id="${id}" name="${id}" class="ashby-application-form-input-text" value=""></div>`;
+        extra.innerHTML =
+          textField('x-ref', 'If you were referred, please share the email of the person who referred you') +
+          textField('x-hear', 'How did you hear about us? (e.g. LinkedIn, a friend)') +
+          textField('x-site', 'Which website did you find this job on?') +
+          textField('x-other', 'Other website') +
+          textField('x-other-url', 'Other Website URL') +
+          textField('x-cur', 'Current or most recent employer') +
+          textField('x-leave', 'Why do you want to leave your current employer?') +
+          `<div data-field-path="x-wa"><fieldset class="ashby-application-form-input-radio-group"><label class="_h _required_x1 _l ashby-application-form-question-title" for="x-wa">Are you currently authorized to work for any employer in the United States?</label>${
+            ['Yes - I have US work authorization as a Citizen or US Permanent Resident / Green Card Holder',
+             'Yes - I have US work authorization via a non-immigrant visa (e.g. F-1, H-1B, L-1, TN)',
+             'No - I am not currently authorized to work in the US'].map((t, i) =>
+              `<div class="ashby-application-form-input-radio-group-option"><span><input type="radio" id="form1_x-wa-labeled-radio-${i}" name="form1_x-wa"></span><label for="form1_x-wa-labeled-radio-${i}" class="ashby-application-form-input-radio-group-option-label">${t}</label></div>`).join('')
+          }</fieldset></div>` +
+          '<div class="ashby-application-form-field-entry" data-field-path="x-team"><label class="_h _l ashby-application-form-question-title" for="x-team">Which team interests you?</label><div><input class="ashby-application-form-input-autocomplete" aria-autocomplete="list" aria-expanded="false" aria-haspopup="listbox" role="combobox" value=""></div></div>' +
+          '<div class="ashby-application-form-field-entry" data-field-path="x-cv"><label class="_h _l ashby-application-form-question-title" for="x-cv">Cover Letter</label><div class="ashby-application-form-input-file"><input type="file" id="x-cv"></div></div>';
+        root.append(extra);
+        const wide = { ...profile, websites: { ...profile.websites, portfolio: 'https://portfolio.example.com/testy' } };
+        const r8 = await form.fillPage({ profile: wide });
+        const xf = form.readFields();
+        const xval = (id) => form.currentValue(xf.find((f) => f.fieldId === id));
+        const personal = ['testy@example.com', wide.websites.linkedin, wide.websites.portfolio];
+        check('referral question not given the email', personal.includes(xval('x-ref')), false);
+        check('hear-about-us text not given a profile URL', personal.includes(xval('x-hear')), false);
+        check('"which website" not given the portfolio', personal.includes(xval('x-site')), false);
+        check('non-location combobox not given the city', xval('x-team'), '');
+        check('"Other website" takes the portfolio', xval('x-other'), wide.websites.portfolio);
+        check('"Other Website URL" takes the portfolio', xval('x-other-url'), wide.websites.portfolio);
+        check('current employer left when the list is empty', xval('x-cur'), '');
+        check('"why leave" text not given an employer', xval('x-leave'), '');
+        check('work authorization with no basis picks no row', xval('x-wa'), '');
+        check('and says to set the basis', r8.left.some((l) => /Work authorization basis/.test(l)), true);
+        const r9 = await form.fillPage({ profile: { ...wide, workAuthBasis: 'visa', employers: ['Globex Synthetic', 'Initech Synthetic'] } });
+        const yf = form.readFields();
+        const yval = (id) => form.currentValue(yf.find((f) => f.fieldId === id));
+        check('current employer is the first of employers', yval('x-cur'), 'Globex Synthetic');
+        check('work authorization basis visa picks the visa row', yval('x-wa').startsWith('Yes - I have US work authorization via a non-immigrant visa'), true);
+        check('empty file field not listed', r8.left.some((l) => /Cover Letter/.test(l)), false);
+        extra.remove();
+
+        /* a follow-up the page reveals only once an earlier question is answered */
+        reset();
+        const gate = document.createElement('div');
+        gate.innerHTML = `<div data-field-path="x-gate"><fieldset class="ashby-application-form-input-radio-group"><label class="_h _required_x1 _l ashby-application-form-question-title" for="x-gate">Are you legally authorized to work in the United States?</label>${
+          ['Yes', 'No'].map((t, i) => `<div class="ashby-application-form-input-radio-group-option"><span><input type="radio" id="form1_x-gate-labeled-radio-${i}" name="form1_x-gate"></span><label for="form1_x-gate-labeled-radio-${i}" class="ashby-application-form-input-radio-group-option-label">${t}</label></div>`).join('')
+        }</fieldset></div>`;
+        root.append(gate);
+        gate.querySelector('input').addEventListener('change', () => setTimeout(() => {
+          const later = document.createElement('div');
+          later.innerHTML = '<div class="ashby-application-form-field-entry" data-field-path="x-later"><label class="_h _required_x1 _l ashby-application-form-question-title" for="x-later">Will you now, or in the future, require employer immigration sponsorship (e.g., H-1B)?</label><div class="ashby-application-form-input-yesno"><button type="button" class="ashby-application-form-input-yesno-option" aria-pressed="false" data-option="yes">Yes</button><button type="button" class="ashby-application-form-input-yesno-option" aria-pressed="false" data-option="no">No</button></div></div>';
+          for (const btn of later.querySelectorAll('button')) {
+            btn.addEventListener('click', () => { for (const b of later.querySelectorAll('button')) b.setAttribute('aria-pressed', String(b === btn)); });
+          }
+          gate.append(later);
+        }, 800)); // slower than the old fixed 300ms re-read
+        const r10 = await form.fillPage({ profile: { ...profile, needsSponsorshipFuture: 'yes' } });
+        const zf = form.readFields();
+        const zval = (id) => { const f = zf.find((x) => x.fieldId === id); return f ? form.currentValue(f) : undefined; };
+        check('gate question answered', zval('x-gate'), 'Yes');
+        check('revealed follow-up filled', [zval('x-later'), has(r10.filled, 'sponsorship')], ['Yes', true]);
+        check('earlier fields not filled twice', r10.filled.filter((l) => l === 'Name').length, 1);
+        gate.remove();
+      };
+
+      fillChecks().catch((err) => lines.push(` FAIL  threw: ${err?.stack ?? err}`)).then(() => {
+        const passed = lines.filter((l) => l.startsWith('  ok')).length;
+        const failed = lines.filter((l) => l.startsWith(' FAIL')).length;
+        document.getElementById('out').textContent = lines.join('\n');
+        const verdict = document.getElementById('verdict');
+        verdict.className = failed ? 'fail' : 'pass';
+        verdict.textContent = `${passed} passed, ${failed} failed`;
+        window.__lines = lines;
+      });
+    </script>
+  </body>
+</html>

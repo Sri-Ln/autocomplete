@@ -54,10 +54,21 @@ AF.questions.SENSITIVE = [
   /\bhispanic|latino\b/i,
   /eeo|equal employment|affirmative action|self.?identif/i,
   /salary history|current (salary|compensation)/i, // illegal to ask in many states
+  /\bage (range|group|bracket)\b|how old\b|\byour (current )?age\b|^age\s*\??$/i,
+  /transgender|\bpronouns?\b/i,
+  /communit(y|ies) .*identify|lgbt|queer/i,
 ];
 
 AF.questions.isSensitive = (text) =>
   AF.questions.SENSITIVE.some((re) => re.test(String(text ?? '')));
+
+/* A saved 'YYYY-MM-DD' strictly before today's calendar date. Today itself is
+ * still a valid start. */
+function startDatePassed(startDate, today) {
+  const t = today ?? new Date();
+  const iso = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(startDate ?? '')) && startDate < iso;
+}
 
 /* ------------------------------------------------------------------ */
 /* helpers                                                            */
@@ -191,6 +202,20 @@ AF.questions.DERIVED = [
   },
 
   {
+    /* "Current employer", "Most recent company", "Current or most recent
+     * employer name" — the top line of "Companies you've worked for". Short
+     * label shapes only, anchored: "Why do you want to leave your current
+     * employer?" and "Have you worked at X?" are other questions. Owned here,
+     * so never recalled; an empty list leaves the field. */
+    id: 'currentEmployer',
+    test: /^(?:current|most recent|latest)(?:\s*\(?\s*(?:or|\/)\s*(?:most recent|current|latest)\s*\)?)?\s+(?:employer|company)(?:\s+name)?\s*[?:*]*$/i,
+    requires: 'employers',
+    resolve: ({ profile }) =>
+      (Array.isArray(profile.employers) ? profile.employers : []).map((e) => String(e ?? '').trim()).find(Boolean) ?? null,
+    explain: () => 'the first company in your employment history',
+  },
+
+  {
     id: 'relativeEmployed',
     yesNo: true,
     test: /(relative|family member|friend|acquaintance).{0,40}(employ|work)/i,
@@ -215,6 +240,19 @@ AF.questions.DERIVED = [
     id: 'relativeOfOfficial',
     yesNo: true,
     test: /\brelative of\b.{0,80}\b(official|officer|executive|senior|director|board)|\brelated to\b.{0,60}\b(official|officer|executive|employee)/i,
+    resolve: () => 'No',
+    explain: () => 'defaults to No',
+  },
+
+  {
+    /* Export-control screening: "Is your most recent country of citizenship or
+     * permanent residency one of: North Korea; Syria; Iran; or Cuba?" — No
+     * (the user's rule, 2026-10-27). Needs both a sanctioned country and a
+     * citizenship / residency word, so a question that only names one of
+     * these countries elsewhere is left alone. */
+    id: 'embargoedCountry',
+    yesNo: true,
+    test: /^(?=.*\b(north korea|syria|iran|cuba)\b)(?=.*\b(citizen|nationality|national|residen)).*/i,
     resolve: () => 'No',
     explain: () => 'defaults to No',
   },
@@ -261,6 +299,17 @@ AF.questions.DERIVED = [
   },
 ];
 
+/** How the user is authorized to work — picks among several "Yes" rows.
+ *  'citizen' | 'permanentResident' | 'visa' | '' (unknown). The popup's
+ *  "Work authorization basis" wins; otherwise needing sponsorship (now or
+ *  later) means a visa. */
+AF.questions.workAuthBasis = (profile = {}) => {
+  const set = String(profile.workAuthBasis ?? '').trim();
+  if (['citizen', 'permanentResident', 'visa'].includes(set)) return set;
+  const { now, future } = AF.questions.sponsorshipFlags(profile);
+  return now === 'Yes' || future === 'Yes' ? 'visa' : '';
+};
+
 /** The two sponsorship answers, Yes/No each. A profile from before the split
  *  has only `needsSponsorship`, which then stands for both. */
 AF.questions.sponsorshipFlags = (profile = {}) => {
@@ -289,6 +338,22 @@ AF.questions.PREFERENCES = [
     resolve: ({ profile }) => flag(profile.willingToTravel),
   },
   {
+    /* A date picker wants a date, not "2 weeks": answered from the saved start
+     * date. A text box still falls through to noticePeriod below. */
+    id: 'startDate',
+    widget: 'date',
+    test: /notice period|when (can|could) you start|earliest start|availability to start|start date/i,
+    requires: 'startDate',
+    resolve: ({ profile, today }) => {
+      const m = String(profile.startDate ?? '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (!m || startDatePassed(profile.startDate, today)) return null;
+      return mmddyyyy(new Date(+m[1], +m[2] - 1, +m[3]));
+    },
+    /* Why a null: a date that has gone by, as opposed to one never saved. */
+    whyNot: ({ profile, today }) => startDatePassed(profile.startDate, today)
+      ? 'your saved start date has passed — update it in the popup' : null,
+  },
+  {
     id: 'noticePeriod',
     test: /notice period|when (can|could) you start|earliest start|availability to start/i,
     requires: 'noticePeriod',
@@ -308,15 +373,16 @@ AF.questions.PREFERENCES = [
 
 /**
  * The demographic questions, answered from what the user saved on purpose in
- * the popup — never learned, never guessed. Only on these two pages; anywhere
- * else the same wording is SENSITIVE and left alone.
+ * the popup — never learned, never guessed. Only on SELF_ID_PAGES or when
+ * ctx.selfId is true; anywhere else the same wording is SENSITIVE and left alone.
  *
  * `field` is the Workday formField id (stable across tenants) and is checked
  * first: the veteran question's label is a page of VEVRAA text that also says
  * "disability". `options` map a saved value onto a tenant's wording; "decline"
  * is shared (DECLINE).
  */
-/* Application Questions too: tenants ask veteran status there (Dexcom, 2026-10-13). */
+/* An adapter page can instead set `selfId: true` (ctx.selfId). The list stays for Workday.
+   Application Questions too: tenants ask veteran status there (Dexcom, 2026-10-13). */
 AF.questions.SELF_ID_PAGES = ['voluntaryDisclosures', 'selfIdentify', 'applicationQuestions'];
 
 const DECLINE = /not wish|n[’']?t wish|decline|prefer not|rather not|do not want|don[’']?t want|choose not|not to (answer|disclose|self)|not declared|not specified/i;
@@ -390,9 +456,9 @@ const FOLLOW_UP = /^(?:if (?:yes|so)|if you answered yes|if applicable)\b/i;
 const DECLARATIONS = ['workAuthorization', 'sponsorship', 'over18'];
 
 AF.questions.matchRule = function (question, ctx = {}) {
-  const { page, widget, fieldId = '' } = ctx;
+  const { page, widget, fieldId = '', selfId = false } = ctx;
   /* A saved self-id value is a choice, never text to type into a box. */
-  if (AF.questions.SELF_ID_PAGES.includes(page) && widget !== 'text') {
+  if ((selfId === true || AF.questions.SELF_ID_PAGES.includes(page)) && widget !== 'text') {
     const rule = AF.questions.SELF_ID.find((r) => r.field.test(fieldId)) ??
       AF.questions.SELF_ID.find((r) => r.test.test(question));
     if (rule) return { kind: 'self-id', rule };
@@ -407,9 +473,11 @@ AF.questions.matchRule = function (question, ctx = {}) {
   if (FOLLOW_UP.test(question)) return { kind: 'follow-up', rule: null };
   /* A Yes/No default never goes into a text box: "Referred by (name)" is not a "No". */
   const derived = AF.questions.DERIVED.find((r) => !(r.yesNo && widget === 'text') &&
+    (!r.widget || [].concat(r.widget).includes(widget)) &&
     r.test.test(question) && ownsQuestion(r, question));
   if (derived) return { kind: 'derived', rule: derived };
-  const preference = AF.questions.PREFERENCES.find((r) => r.test.test(question));
+  const preference = AF.questions.PREFERENCES.find((r) =>
+    (!r.widget || [].concat(r.widget).includes(widget)) && r.test.test(question));
   if (preference) return { kind: 'preference', rule: preference };
   return null;
 };
@@ -450,6 +518,26 @@ AF.questions.pickOption = function (options, decision) {
       !/\b(not|don[’']?t|disagree|decline)\b/i.test(t));
   }
 
+  /* "Yes - I have US work authorization as a Citizen…" / "Yes - … via a
+   * non-immigrant visa…": with more than one Yes row, the right one depends on
+   * HOW the user is authorized (decision.basis). Unknown, or no row for it,
+   * picks nothing rather than a guess. */
+  if (decision.source === 'derived' && decision.rule === 'workAuthorization' && decision.answer === 'Yes') {
+    const yesRows = texts.map((t, i) => (/^yes\b/i.test(t) || (AFFIRM.test(t) && !NEGATE.test(t)) ? i : -1)).filter((i) => i >= 0);
+    if (yesRows.length > 1) {
+      const rowFor = (re) => yesRows.find((i) => re.test(texts[i])) ?? -1;
+      switch (decision.basis) {
+        case 'visa': return rowFor(/visa|non-?immigrant|\bf-?1\b|\bh-?1b\b|\bopt\b|\bead\b|\bl-?1\b|\btn\b|sponsor/i);
+        case 'citizen': return rowFor(/citizen/i);
+        case 'permanentResident': {
+          const i = rowFor(/permanent resident|green card/i);
+          return i >= 0 ? i : rowFor(/citizen/i);
+        }
+        default: return -1;
+      }
+    }
+  }
+
   const norm = texts.map((t) => AF.normalizeText(t));
   const want = AF.normalizeText(decision.answer);
   let i = norm.indexOf(want);
@@ -465,6 +553,12 @@ AF.questions.pickOption = function (options, decision) {
   }
   return i;
 };
+
+/** Why a decision found no row, for the drivers' "left" report. */
+AF.questions.optionReason = (decision) =>
+  decision?.rule === 'workAuthorization' && decision.answer === 'Yes' && 'basis' in decision
+    ? 'no "Yes" row fits — set "Work authorization basis" in the popup'
+    : `"${decision?.answer}" is not one of the options`;
 
 /* ------------------------------------------------------------------ */
 /* 3b. visa explanation — prose, not a tier                           */
@@ -576,7 +670,9 @@ const WRITTEN = /\b(why|explain|describe|elaborate|tell us)\b/i;
 
 AF.questions.signature = function (text, ctx = {}) {
   const question = AF.questions.questionCore(text);
-  const company = ctx.company ?? AF.tenantFromHostname?.() ?? '';
+  const company = ctx.company ??
+    // A site that names no company means none — never fall through to the hostname.
+    (typeof AF.currentCompany === 'function' ? AF.currentCompany() : AF.tenantFromHostname?.()) ?? '';
   const signature = AF.questions.swapCompany(AF.normalizeText(question), company);
   const m = question ? AF.questions.matchRule(question, ctx) : null;
   const refusal = m
@@ -707,17 +803,20 @@ AF.questions.resolve = function (text, ctx = {}) {
             ? rule.unclear
             : org
               ? `needs your "${rule.requires}" list to answer this for "${org}"`
-              : `set "${rule.requires}" in your profile to answer this automatically`,
+              : `set "${rule.requires}" in your profile to answer this automatically`
         };
       }
       return { answer, source: 'derived', rule: rule.id,
-               reason: rule.explain ? rule.explain({ org, answer }) : 'computed from your profile' };
+               reason: rule.explain ? rule.explain({ org, answer }) : 'computed from your profile',
+               /* pickOption needs this to choose among several "Yes" rows. */
+               ...(rule.id === 'workAuthorization' ? { basis: AF.questions.workAuthBasis(profile) } : {}) };
     }
     case 'preference': {
-      const answer = m.rule.resolve({ profile });
+      const answer = m.rule.resolve({ profile, today: ctx.today });
       return answer === null
         ? { answer: null, source: 'none', rule: m.rule.id,
-            reason: `set "${m.rule.requires}" in your profile to answer this automatically` }
+            reason: m.rule.whyNot?.({ profile, today: ctx.today })
+              ?? `set "${m.rule.requires}" in your profile to answer this automatically` }
         : { answer, source: 'preference', rule: m.rule.id, reason: 'from your saved preference' };
     }
   }

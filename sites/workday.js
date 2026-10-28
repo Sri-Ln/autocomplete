@@ -38,6 +38,9 @@ AF.sites.workday = {
    * covers all of them — see findCredential() in background/storage.js. */
   hostMatch: /(^|\.)myworkdayjobs\.com$/i,
 
+  /* The tenant is the company: nvidia.wd5.myworkdayjobs.com → "nvidia". */
+  company: () => AF.tenantFromHostname(),
+
   pages: {
     /* ====================================================================
      * PAGE: Create Account                                      [VERIFIED]

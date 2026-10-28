@@ -213,5 +213,14 @@ legacy.education[0].school = 'mutated';
 check('and reading it hands out a fresh copy each time',
   (await S.getProfile()).education[0].school, '');
 
+// Email and earliest start date: plain strings through the whitelist.
+await S.setProfile({ firstName: 'Ada', email: ' ada@example.com ', startDate: '2026-11-16' });
+const p2 = await S.getProfile();
+check('email is kept, trimmed', p2.email, 'ada@example.com');
+check('startDate is kept', p2.startDate, '2026-11-16');
+disk.af_profile = { firstName: 'Old' };
+const old = await S.getProfile();
+check('an old profile reads both as empty', [old.email, old.startDate], ['', '']);
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

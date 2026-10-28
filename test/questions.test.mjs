@@ -576,5 +576,108 @@ check('F5: "I am not a veteran" is preferred over "not a protected veteran"',
 check('F5: with only "not a protected veteran" on offer, that one',
   pick(['I am not a protected veteran', 'I identify as one or more of the classifications of protected veteran'], live(VETQ)), 0);
 
+check('selfId flag answers gender off Workday',
+  AF.questions.resolve('Gender', { profile: EEO, selfId: true, widget: 'choice' }).source, 'self-id');
+check('no flag, no page: gender stays sensitive',
+  AF.questions.resolve('Gender', { profile: EEO, widget: 'choice' }).answer, null);
+check('selfId never learns a demographic',
+  AF.questions.remember({}, 'Gender', 'Female', { selfId: true, widget: 'choice' }).stored, false);
+check('Workday page list still works without the flag',
+  AF.questions.resolve('What is your legal gender?', { profile: EEO, page: 'voluntaryDisclosures', widget: 'listbox' }).source, 'self-id');
+
+const TODAY = new Date(2026, 9, 27);
+const sd = (startDate, widget) => AF.questions.resolve('When can you start?',
+  { profile: { noticePeriod: '2 weeks', startDate }, widget, today: TODAY });
+check('date widget gets the saved start date', sd('2026-11-16', 'date').answer, '11/16/2026');
+check('start date equal to today is answered', sd('2026-10-27', 'date').answer, '10/27/2026');
+check('text widget still gets the notice period', sd('2026-11-16', 'text').answer, '2 weeks');
+check('unset start date → blank', sd('', 'date').answer, null);
+check('past start date → blank', sd('2026-10-01', 'date').answer, null);
+check('past start date says why', sd('2026-10-01', 'date').reason, 'your saved start date has passed — update it in the popup');
+for (const q of ['What is your age range?', 'Do you identify as transgender?',
+                 'What are your pronouns?', 'Which communities do you identify with?'])
+  check(`sensitive: ${q}`, AF.questions.isSensitive(q), true);
+check('age wording is not over-broad', AF.questions.isSensitive('Are you willing to manage a team?'), false);
+
+check('pronounce is not the pronoun question', AF.questions.isSensitive('How do you pronounce your name?'), false);
+
+/* A site that names no company (hook returns null) must not fall back to the
+   hostname: on Ashby that rule would say "jobs". */
+{
+  const keep = [AF.currentCompany, AF.tenantFromHostname];
+  AF.currentCompany = () => null;
+  AF.tenantFromHostname = () => 'jobs';
+  check('null company hook: hostname is not swapped in',
+    AF.questions.signature('Do you enjoy open jobs at Acme?').signature, 'do you enjoy open jobs at acme');
+  [AF.currentCompany, AF.tenantFromHostname] = keep;
+}
+
+/* Age as a number is as protected as an age range. */
+for (const q of ['What is your current age?', 'What is your age?']) {
+  check(`sensitive: ${q}`, AF.questions.isSensitive(q), true);
+  check(`left blank: ${q}`, AF.questions.resolve(q, { profile: PROFILE, learned: {}, widget: 'text' }).answer, null);
+  check(`not recallable: ${q}`, AF.questions.remember({}, q, '30', { widget: 'text' }).stored, false);
+}
+for (const q of ['What stage are you at?', 'Expected wage?', 'Which agency referred you?',
+                 'What is your average response time?', 'Please share your page URL.'])
+  check(`not age: ${q}`, AF.questions.isSensitive(q), false);
+
+/* ---- Work authorization with several "Yes" rows: pick by basis ---- */
+const WA_Q = 'Are you currently authorized to work for any employer in the United States?';
+const WA_ROWS = [
+  'Yes - I have US work authorization as a Citizen or US Permanent Resident / Green Card Holder',
+  'Yes - I have US work authorization via a non-immigrant visa (e.g. F-1, H-1B, L-1, TN)',
+  'No - I am not currently authorized to work in the US',
+];
+const waPick = (profile, rows = WA_ROWS) =>
+  AF.questions.pickOption(rows, AF.questions.resolve(WA_Q, { profile, learned: {}, widget: 'choice' }));
+const WAP = { workAuthorized: 'yes', needsSponsorshipNow: 'no', needsSponsorshipFuture: 'yes' };
+check('sponsorship flag Yes -> visa row', waPick(WAP), 1);
+check('workAuthBasis visa -> visa row', waPick({ workAuthorized: 'yes', workAuthBasis: 'visa' }), 1);
+check('workAuthBasis citizen -> citizen row', waPick({ workAuthorized: 'yes', workAuthBasis: 'citizen' }), 0);
+check('workAuthBasis permanentResident -> green card row', waPick({ workAuthorized: 'yes', workAuthBasis: 'permanentResident' }), 0);
+check('explicit basis beats the sponsorship flags', waPick({ ...WAP, workAuthBasis: 'citizen' }), 0);
+check('unknown basis picks nothing', waPick({ workAuthorized: 'yes', needsSponsorshipNow: 'no', needsSponsorshipFuture: 'no' }), -1);
+check('no row for the basis picks nothing', waPick({ workAuthorized: 'yes', workAuthBasis: 'citizen' },
+  [WA_ROWS[1], 'Yes - I have another status', WA_ROWS[2]]), -1);
+check('permanent resident falls back to a citizen-or-permanent row',
+  waPick({ workAuthorized: 'yes', workAuthBasis: 'permanentResident' }, ['Yes - citizen', WA_ROWS[1], WA_ROWS[2]]), 0);
+check('a No answer is unchanged', waPick({ workAuthorized: 'no', workAuthBasis: 'visa' }), 2);
+check('plain Yes/No is unchanged', waPick({ workAuthorized: 'yes' }, ['Yes', 'No']), 0);
+check('a single Yes row is unchanged', waPick({ workAuthorized: 'yes' }, [WA_ROWS[1], WA_ROWS[2]]), 0);
+check('the decision carries the basis',
+  AF.questions.resolve(WA_Q, { profile: WAP, learned: {} }).basis, 'visa');
+check('the left reason names the popup field',
+  /work authorization basis/i.test(AF.questions.optionReason(AF.questions.resolve(WA_Q, { profile: WAP, learned: {} }))), true);
+
+/* ---- "Other website" -> handled in sites/ashby.js (harness) ---- */
+
+/* ---- Current employer: first of employers ---- */
+const CE = { employers: ['Initech', 'Globex'] };
+for (const q of ['Current employer', 'Current company?', 'Most recent employer', 'Current or most recent employer',
+                 'Current or most recent company name', 'Current (or most recent) employer', 'Most recent company name?']) {
+  const r = AF.questions.resolve(q, { profile: CE, learned: {}, widget: 'text' });
+  check(`current employer: ${q}`, [r.answer, r.rule, r.source], ['Initech', 'currentEmployer', 'derived']);
+}
+check('blank first lines are skipped',
+  AF.questions.resolve('Current employer', { profile: { employers: ['', '  ', 'Globex'] }, learned: {}, widget: 'text' }).answer, 'Globex');
+check('empty list -> no answer',
+  AF.questions.resolve('Current employer', { profile: { employers: [] }, learned: {}, widget: 'text' }).answer, null);
+for (const q of ['Have you worked at Initech before?', 'Why do you want to leave your current employer?',
+                 'Are you a current employee of Initech?', 'Is your current employer aware you are applying?'])
+  check(`not currentEmployer: ${q}`, AF.questions.resolve(q, { profile: CE, learned: {}, widget: 'text' }).rule === 'currentEmployer', false);
+check('never recalled', AF.questions.remember({}, 'Current employer', 'Initech', { widget: 'text' }).stored, false);
+
+/* ---- Export-control screening -> No ---- */
+const EMBARGO = 'Is your most recent country of (1) citizenship or (2) permanent residency one of the following countries: North Korea; Syria; Iran; or Cuba?';
+for (const widget of ['yesno', 'choice']) {
+  const r = AF.questions.resolve(EMBARGO, { profile: {}, learned: {}, widget, selfId: true });
+  check(`embargoed country (${widget}) -> No`, [r.answer, r.rule], ['No', 'embargoedCountry']);
+}
+check('embargoed country: never a text answer',
+  AF.questions.resolve(EMBARGO, { profile: {}, learned: {}, widget: 'text' }).rule === 'embargoedCountry', false);
+check('a country alone is not the screening question',
+  AF.questions.resolve('Would you be willing to travel to Cuba?', { profile: {}, learned: {}, widget: 'yesno' }).rule === 'embargoedCountry', false);
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

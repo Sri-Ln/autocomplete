@@ -25,8 +25,9 @@
       Loads the real <code>popup/popup.html</code>, <code>popup/popup.js</code> and
       <code>background/storage.js</code> — not copies. <code>chrome.storage.local</code>
       is a plain object here, so "what survives closing the popup" is exactly "what
-      reached storage". Proves the visa explanation persists without clicking
-      <b>Save profile</b>, which is the one field people type into and close.
+      reached storage". Proves the Profile and Experience tabs save themselves —
+      debounced, in the shape the old Save buttons sent — and that the Answers
+      tab is gone while its data stays.
     </p>
 
     <div class="run"><button id="runBtn">Run checks</button></div>
@@ -44,6 +45,9 @@
       const disk = {};
       const mem = { af_session_key: 'fake' };
       const sent = [];
+      const saves = []; // every saveProfile message, as sent
+      const created = [];
+      let asPopup = false;
 
       globalThis.chrome = {
         storage: {
@@ -62,18 +66,29 @@
         tabs: {
           async query() { return [{ id: 1, url: 'https://x.wd5.myworkdayjobs.com/en-US/careers' }]; },
           async sendMessage(_id, msg) { sent.push(msg); },
+          async create(o) { created.push(o); },
         },
-        runtime: { sendMessage: (m) => dispatch(m) },
+        /* The toolbar popup is the one place getViews({type:'popup'}) lists the
+           page itself; a harness flips this to stand in for either. */
+        extension: { getViews: () => (asPopup ? [window] : []) },
+        runtime: {
+          sendMessage: (m) => dispatch(m),
+          getURL: (p) => 'chrome-extension://fixture/' + p,
+          getManifest: () => ({ content_scripts: [{ matches: ['https://*.myworkdayjobs.com/*'] }] }),
+        },
       };
 
       const S = await import('../background/storage.js');
+      const EMPTY = S.EMPTY_PROFILE;
 
       async function dispatch(m) {
         switch (m.type) {
           case 'status':
             return { configured: true, unlocked: true, settings: await S.getSettings() };
           case 'getProfile': return { ok: true, profile: await S.getProfile() };
-          case 'saveProfile': await S.setProfile(m.profile ?? {}); return { ok: true };
+          case 'saveProfile':
+            saves.push(JSON.parse(JSON.stringify(m)));
+            await S.setProfile(m.profile ?? {}); return { ok: true };
           case 'listCredentials': return { ok: true, ...(await S.listCredentials()) };
           case 'getSettings': return { ok: true, settings: await S.getSettings() };
           case 'saveSettings': await S.setSettings(m.patch ?? {}); return { ok: true };
@@ -82,6 +97,7 @@
           case 'forgetPick': await S.forgetPick(m.hostname, m.key); return { ok: true };
           case 'saveAnswers': await S.setAnswers(m.answers); return { ok: true };
           case 'savePick': await S.savePick(m.hostname, m.key, m.value); return { ok: true };
+          case 'wipe': await S.wipeAll(); return { ok: true };
 
           /* The state the feature actually ships in: manifest.json still holds
              the REPLACE_ME client id, so the popup must show setup steps and
@@ -103,12 +119,12 @@
       /* ---- mount the real popup --------------------------------------- */
 
       const host = document.getElementById('popupHost');
-      const html = await (await fetch('../popup/popup.html')).text();
+      const html = await (await fetch('../popup/popup.html', { cache: 'reload' })).text();
       const doc = new DOMParser().parseFromString(html, 'text/html');
 
       const css = document.createElement('link');
       css.rel = 'stylesheet';
-      css.href = '../popup/popup.css';
+      css.href = '../popup/popup.css?v=' + Date.now();
       document.head.append(css);
 
       // insertAdjacentHTML does not run scripts, so popup.js is appended by hand
@@ -159,7 +175,11 @@
         for (const k of Object.keys(disk)) delete disk[k];
         await window.__afBoot(); // a freshly opened popup, empty storage
 
-        /* ---- 1. the bug: typing and closing, never clicking Save ---- */
+        /* ---- 1. typing saves after a pause; there is no Save button ---- */
+
+        check('no Save profile or Save experience button', [!!$('saveProfileBtn'), !!$('saveExperienceBtn')],
+          [false, false]);
+        check('the Login tab keeps its Save login', !!$('saveCredBtn'), true);
 
         type('visaExplanation', VISA);
         check('not written on the first keystroke', stored().visaExplanation, undefined);
@@ -167,17 +187,61 @@
         await sleep(900); // past the debounce
         check('autosaved after a pause in typing', stored().visaExplanation, VISA);
         check('and the label says so', $('visaCount').textContent, `${VISA.length} characters · saved`);
+        check('with a quiet Saved status', [$('saveStatus').textContent, $('saveStatus').classList.contains('show')],
+          ['Saved', true]);
+        check('and open tabs are told to repaint', sent.some((m) => m.type === 'profileChanged'), true);
 
-        /* ---- 2. autosaving the visa box commits nothing else ----
-         * A half-typed name in another box is not an instruction to save it. */
+        /* ---- 2. a burst of typing is one save, of the whole tab, in the old shape ---- */
 
-        type('firstName', 'Ada-in-progress');
-        type('visaExplanation', VISA + ' Edited.');
+        saves.length = 0;
+        for (const part of ['A', 'Ad', 'Ada']) type('firstName', part);
+        type('lastName', 'Lovelace');
+        type('employers', ' Acme Widgets \n\nGlobex\n');
+        await sleep(200);
+        check('nothing is written mid-burst', saves.length, 0);
+        await sleep(700);
+        check('one save for the burst', saves.length, 1);
+        check('the same message the Save profile button sent', [saves[0]?.type, Object.keys(saves[0] ?? {}).sort()],
+          ['saveProfile', ['profile', 'type']]);
+        check('the whole tab, lists split one per line', [saves[0]?.profile.firstName, saves[0]?.profile.lastName,
+          saves[0]?.profile.employers, saves[0]?.profile.visaExplanation], ['Ada', 'Lovelace', ['Acme Widgets', 'Globex'], VISA]);
+        check('and every key the stored profile has, so nothing is wiped',
+          Object.keys(EMPTY).every((k) => k in (saves[0]?.profile ?? {})), true);
+        check('legacy needsSponsorship is still dropped', 'needsSponsorship' in (saves[0]?.profile ?? {}), false);
+
+        /* ---- 3. picks save at once: selects, dates, segments ---- */
+
+        const pick = (id, value) => {
+          $(id).value = value;
+          $(id).dispatchEvent(new Event('change', { bubbles: true }));
+        };
+        pick('eeoGender', 'decline');
+        await settle(); await settle();
+        check('a select saves on change, no debounce', stored().eeoGender, 'decline');
+        pick('startDate', '2027-01-15');
+        await settle(); await settle();
+        check('a date saves on change', stored().startDate, '2027-01-15');
+        $('over18').querySelector('[data-value="yes"]').click();
+        await settle(); await settle();
+        check('a segment saves on click', stored().over18, 'yes');
+
+        /* ---- 4. a value the browser rejects never wipes a saved one ---- */
+
+        type('email', 'testy@example.com');
         await sleep(900);
-        check('visa edit persisted', stored().visaExplanation, VISA + ' Edited.');
-        check('but the in-progress name did not', stored().firstName, '');
+        check('a valid email saves', stored().email, 'testy@example.com');
+        type('email', 'testy-at-example');
+        type('city', 'Springfield');
+        await sleep(900);
+        check('an invalid one keeps the stored value', stored().email, 'testy@example.com');
+        check('while the rest of the tab still saves', stored().city, 'Springfield');
+        check('and the box and status say so', [$('email').classList.contains('invalid'),
+          /Email: not saved/.test($('saveStatus').textContent)], [true, true]);
+        type('email', 'testy@example.com');
+        await sleep(900);
+        check('fixing it clears the mark', $('email').classList.contains('invalid'), false);
 
-        /* ---- 3. closing before the debounce fires still saves ----
+        /* ---- 5. closing before the debounce fires still saves ----
          * The popup dies on close; a pending timer dies with it. */
 
         type('visaExplanation', 'Closed in a hurry.');
@@ -185,56 +249,51 @@
         await settle();
         check('flushed when the popup goes away', stored().visaExplanation, 'Closed in a hurry.');
 
-        /* ---- 4. Save profile still saves the whole form ---- */
-
-        type('firstName', 'Ada');
-        type('lastName', 'Lovelace');
-        $('saveProfileBtn').click();
-        await settle();
-        await settle();
-        check('Save profile writes every field', [stored().firstName, stored().lastName],
-          ['Ada', 'Lovelace']);
-        check('and leaves the visa text alone', stored().visaExplanation, 'Closed in a hurry.');
-
-        /* ---- 5. reopening the popup shows what was stored ---- */
+        saves.length = 0;
+        document.dispatchEvent(new Event('visibilitychange'));
+        $('firstName').dispatchEvent(new Event('change', { bubbles: true })); // leaving a box, nothing new
+        await settle(); await settle();
+        check('closing or leaving a box with nothing new writes nothing', saves.length, 0);
 
         type('visaExplanation', '');
-        type('firstName', '');
         await sleep(900);
         // Empty is a legitimate value: clearing the box and closing must clear it.
         check('clearing the box clears storage too', stored().visaExplanation, '');
 
+        /* reopening the popup shows what was stored */
         await S.setProfile({ ...(await S.getProfile()), visaExplanation: VISA });
         await window.__afBoot(); // same path as reopening the popup
         check('reopening paints the stored text', $('visaExplanation').value, VISA);
         check('with no unsaved marker', $('visaCount').textContent, `${VISA.length} characters · saved`);
 
-        /* ---- 6. per-company picks are listed, and forgettable one by one ---- */
+        /* ---- 6. no Answers tab: learned answers and picks are backend-only ----
+         * They still ride along in the backup (section 8) and are erased by
+         * Erase everything (section 10); the popup just has no view of them. */
 
-        await S.savePick('acme.wd5.myworkdayjobs.com', 'source', 'Acme Careers Website');
+        check('there is no Answers tab, panel or list',
+          [!!document.querySelector('.tab[data-tab="answers"]'),
+           !!document.querySelector('.panel[data-panel="answers"]'),
+           !!$('answersList'), !!$('picksList'), !!$('forgetAllBtn')],
+          [false, false, false, false, false]);
+        const visiblePanels = () => [...document.querySelectorAll('.panel')]
+          .filter((p) => !p.hidden).map((p) => p.dataset.panel);
+        const tabNames = [...document.querySelectorAll('.tab')].map((t) => t.dataset.tab);
+        check('the tabs left are Login, Profile, Experience, Settings', tabNames,
+          ['login', 'profile', 'experience', 'settings']);
+        const shown = [];
+        for (const t of document.querySelectorAll('.tab')) { t.click(); shown.push(visiblePanels()); }
+        check('and each tab still shows exactly its own panel', shown, tabNames.map((t) => [t]));
+        document.querySelector('.tab[data-tab="login"]').click();
+
         await S.savePick('globex.wd1.myworkdayjobs.com', 'source', 'LinkedIn');
-        await window.__afBoot();
-        await settle();
-        const pickRows = () => [...$('picksList').querySelectorAll('.item')]
-          .map((r) => r.querySelector('.email').textContent);
-        check("each company's pick is listed",
-          pickRows().sort(), ['How did you hear: Acme Careers Website', 'How did you hear: LinkedIn']);
 
-        const acmeRow = [...$('picksList').querySelectorAll('.item')]
-          .find((r) => r.textContent.includes('acme.wd5'));
-        acmeRow.querySelector('button').click();
-        await settle();
-        await settle();
-        check('forgetting one leaves the other', pickRows(), ['How did you hear: LinkedIn']);
-        check('and it is gone from storage', await S.getPicks('acme.wd5.myworkdayjobs.com'), {});
-
-        /* ---- 7. the Experience tab saves only itself, and round-trips ----
+        /* ---- 7. the Experience tab autosaves only itself, and round-trips ----
          * Synthetic values. Ladders are one rung per line; levels come from the
          * segmented controls, never free text. */
 
-        type('firstName', 'Half-typed');
         const edu0 = document.querySelector('.card.edu[data-edu="0"]');
-        const setK = (card, k, v) => { card.querySelector(`[data-k="${k}"]`).value = v; };
+        const fire = (el, v) => { el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); };
+        const setK = (card, k, v) => fire(card.querySelector(`[data-k="${k}"]`), v);
         setK(edu0, 'school', 'Sample Tech Institute');
         setK(edu0, 'degree', "Master's Degree\n Master of Science \n");
         setK(edu0, 'fieldOfStudy', 'Astro Gardening\nWidgetry');
@@ -247,21 +306,19 @@
         $('addLangBtn').click();
         $('addLangBtn').click(); // left blank: dropped on save
         const cards = [...$('langList').querySelectorAll('.card.lang')];
-        cards[0].querySelector('[data-k="language"]').value = 'Esperanto';
+        fire(cards[0].querySelector('[data-k="language"]'), 'Esperanto');
         cards[0].querySelector('.seg[data-k="overall"] [data-value="fluent"]').click();
-        cards[1].querySelector('[data-k="language"]').value = 'Volapük';
+        fire(cards[1].querySelector('[data-k="language"]'), 'Volapük');
         cards[1].querySelector('.seg[data-k="overall"] [data-value="intermediate"]').click();
         cards[1].querySelector('.seg[data-k="reading"] [data-value="advanced"]').click();
 
-        $('skills').value = 'Widget Design\nGadgetry';
-        $('web_github').value = 'github.example/testy';
-        $('web_linkedin').value = 'linkedin.example/in/testy';
+        fire($('skills'), 'Widget Design\nGadgetry');
+        fire($('web_github'), 'github.example/testy');
+        fire($('web_linkedin'), 'linkedin.example/in/testy');
 
-        $('saveExperienceBtn').click();
-        await sleep(50);
-        await settle();
+        await sleep(900);
         const p = stored();
-        check('Save experience writes the education slot, ladders as lists', p.education?.[0],
+        check('the Experience tab autosaves the education slot, ladders as lists', p.education?.[0],
           { school: 'Sample Tech Institute', degree: ["Master's Degree", 'Master of Science'],
             fieldOfStudy: ['Astro Gardening', 'Widgetry'], gpa: '3.9', from: '2020', to: '05/2022' });
         check('and keeps two slots', p.education?.length, 2);
@@ -270,14 +327,26 @@
            { language: 'Volapük', overall: 'intermediate', reading: 'advanced', writing: '', speaking: '', comprehension: '' }]);
         check('skills and links', [p.skills, p.websites],
           [['Widget Design', 'Gadgetry'], { linkedin: 'linkedin.example/in/testy', github: 'github.example/testy', portfolio: '', other: '' }]);
-        check('but not the half-typed name on the Profile tab', p.firstName, 'Ada');
-        check('and the visa text survives it', p.visaExplanation, VISA);
+        check('without touching the Profile tab', [p.firstName, p.visaExplanation], ['Ada', VISA]);
+        check('and the Quick copy chips follow', [...$('quickChips').children].map((b) => b.textContent),
+          ['LinkedIn', 'GitHub', 'Visa']);
 
-        type('firstName', 'Ada');
-        $('saveProfileBtn').click();
-        await settle();
-        await settle();
-        check('Save profile afterwards does not wipe the experience', stored().skills, ['Widget Design', 'Gadgetry']);
+        $('addLangBtn').click();
+        fire([...$('langList').querySelectorAll('.card.lang')].at(-1).querySelector('[data-k="language"]'), 'Klingon');
+        await sleep(900);
+        check('a new language saves', stored().languages.map((l) => l.language), ['Esperanto', 'Volapük', 'Klingon']);
+        [...$('langList').querySelectorAll('.card.lang')].at(-1).querySelector('.lang-head button').click();
+        await settle(); await settle();
+        check('and removing it saves at once', stored().languages.map((l) => l.language), ['Esperanto', 'Volapük']);
+
+        /* Both tabs edited inside one debounce: each save builds on the other's. */
+        type('lastName', 'Byron');
+        fire($('skills'), 'Widget Design\nGadgetry\nDoohickeys');
+        await sleep(900);
+        check('edits on both tabs at once both land', [stored().lastName, stored().skills],
+          ['Byron', ['Widget Design', 'Gadgetry', 'Doohickeys']]);
+        fire($('skills'), 'Widget Design\nGadgetry');
+        await sleep(900);
 
         await window.__afBoot();
         await settle();
@@ -322,6 +391,76 @@
         })));
         check('unknown keys in a file are dropped, as when typing', 'evil' in (await S.getProfile()), false);
         check('and a setting of the wrong type is ignored', (await S.getSettings()).autoSubmit, true);
+
+        /* ---- 9. import: a tab, not the toolbar popup; confirm in the page ----
+         * The OS file picker and window.confirm both freeze the action popup on
+         * Windows, so the popup hands off to a tab and the confirmation is ours. */
+
+        let picked = 0;
+        $('importFile').addEventListener('click', (e) => { picked++; e.preventDefault(); });
+        created.length = 0; // a re-run from the button starts clean
+        asPopup = true;
+        $('importBtn').click();
+        await settle();
+        check('in the toolbar popup, Import opens the page in a tab',
+          created.map((c) => c.url), ['chrome-extension://fixture/popup/popup.html#import']);
+        check('and does not open the file picker', picked, 0);
+
+        asPopup = false;
+        $('importBtn').click();
+        check('in a tab, Import opens the file picker', picked, 1);
+
+        location.hash = '#import';
+        window.__afShowImport();
+        const settingsPanel = document.querySelector('.panel[data-panel="settings"]');
+        check('a tab opened with #import shows the Backup section', settingsPanel.hidden, false);
+        check('with a hint at the button', /Choose your backup file to import\./.test($('importHint').textContent) && !$('importHint').hidden, true);
+        history.replaceState(null, '', location.pathname + location.search);
+
+        const file = new File([text], 'b.json', { type: 'application/json' });
+        const feed = async () => {
+          const dt = new DataTransfer();
+          dt.items.add(file);
+          $('importFile').files = dt.files;
+          $('importFile').dispatchEvent(new Event('change'));
+          await settle(); await settle();
+        };
+        for (const k of Object.keys(disk)) delete disk[k];
+        await feed();
+        check('a chosen file waits for an in-page confirmation', [$('importConfirm').hidden, stored().firstName], [false, undefined]);
+        $('importCancel').click();
+        await settle(); await settle();
+        check('Cancel saves nothing and hides the bar', [$('importConfirm').hidden, stored().firstName], [true, undefined]);
+        await feed();
+        $('importReplace').click();
+        await sleep(100); await settle();
+        check('Replace applies the backup', [stored().firstName, $('importConfirm').hidden], ['Ada', true]);
+
+        /* ---- 9b. every Quick copy chip fits one line at popup width ---- */
+
+        await S.setProfile({ ...(await S.getProfile()), visaExplanation: VISA, websites: {
+          linkedin: 'linkedin.example/in/testy', github: 'github.example/testy',
+          portfolio: 'portfolio.example.com', other: 'testy.example.com' } });
+        await window.__afBoot();
+        const hostStyle = host.getAttribute('style');
+        host.style.width = host.style.maxWidth = '332px'; // the popup's 330px body + this frame's border
+        const chipTops = [...$('quickChips').children].map((b) => b.offsetTop);
+        check('five chips, the visa one labelled just Visa', [...$('quickChips').children].map((b) => b.textContent),
+          ['LinkedIn', 'GitHub', 'Portfolio', 'Website', 'Visa']);
+        check('all on one line', new Set(chipTops).size, 1);
+        if (hostStyle === null) host.removeAttribute('style'); else host.setAttribute('style', hostStyle);
+
+        /* ---- 10. Erase everything erases the answers and picks too ---- */
+
+        await S.setAnswers({ 'are you 18 or older': { answer: 'Yes', seen: 2 } });
+        await S.savePick('globex.wd1.myworkdayjobs.com', 'source', 'LinkedIn');
+        const realConfirm = window.confirm;
+        window.confirm = () => true;
+        $('wipeBtn').click();
+        await sleep(50); await settle();
+        window.confirm = realConfirm;
+        check('Erase everything leaves nothing on disk', Object.keys(disk), []);
+        check('remembered answers and picks included', [await S.getAnswers(), await S.listPicks()], [{}, {}]);
 
         const v = document.getElementById('verdict');
         v.className = failed ? 'fail' : 'pass';

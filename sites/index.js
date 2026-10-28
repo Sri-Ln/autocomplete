@@ -12,6 +12,7 @@
 
 AF.SITES = [
   AF.sites.workday,
+  AF.sites.ashby,
   // AF.sites.greenhouse,
   // AF.sites.lever,
 ];

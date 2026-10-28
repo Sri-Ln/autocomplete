@@ -33,7 +33,6 @@
         <button class="tab active" data-tab="login" role="tab">Login</button>
         <button class="tab" data-tab="profile" role="tab">Profile</button>
         <button class="tab" data-tab="experience" role="tab">Experience</button>
-        <button class="tab" data-tab="answers" role="tab">Answers</button>
         <button class="tab" data-tab="settings" role="tab">Settings</button>
       </nav>
 
@@ -43,41 +42,22 @@
              here and on the Sign In / Create Account pages — nowhere else. -->
         <div class="card" id="vaultSetup" hidden>
           <h2>Choose a passphrase</h2>
-          <p>
-            It encrypts the Workday password you save below. It is never stored
-            anywhere. You'll type it once per Chrome session, and only when a
-            Sign In or Create Account page needs the password. Everything else
-            works without it.
-          </p>
+          <p>Encrypts only your saved password. Asked once per Chrome session.</p>
           <div class="stack tight">
             <label>Passphrase<input type="password" id="setupPass" autocomplete="new-password" /></label>
             <label>Confirm<input type="password" id="setupPass2" autocomplete="new-password" /></label>
             <button class="primary" id="setupBtn">Create</button>
           </div>
-          <p class="fine">
-            Forget it and you lose only the saved password. Re-enter it and
-            you're back. Your profile details are untouched.
-          </p>
         </div>
 
         <div class="card" id="vaultLocked" hidden>
           <h2>Password locked</h2>
-          <p>
-            Chrome was restarted, so the key is gone from memory. Unlock to
-            change your saved login. Sign In and Create Account pages ask for
-            it too, right in the widget.
-          </p>
+          <p>Unlock to change your saved login.</p>
           <div class="stack tight">
             <label>Passphrase<input type="password" id="unlockPass" autocomplete="off" /></label>
             <button class="primary" id="unlockBtn">Unlock</button>
           </div>
         </div>
-
-        <p class="fine">
-          The default login is used on <b>every</b> Workday tenant, including ones
-          you've never visited. Add a host override only if one company forces a
-          different password.
-        </p>
 
         <div class="stack" id="credForm">
         <label>Email<input type="email" id="credEmail" autocomplete="off" /></label>
@@ -86,7 +66,7 @@
           <input type="password" id="credPass" autocomplete="off" placeholder="••••••••" />
         </label>
 
-        <label class="row">
+        <label class="row" title="The default login is used on every Workday site. Use this only if one company forces a different password.">
           <input type="checkbox" id="credIsOverride" />
           <span>Save for one host only</span>
         </label>
@@ -101,20 +81,10 @@
         <div id="credList" class="list"></div>
 
         <div class="divider">Verify email</div>
-        <p class="fine">
-          After you create an account, Workday emails an activation link and the
-          page only says "an email has been sent to you". This finds that email in
-          Gmail and <b>shows</b> you the link. It never opens it — a URL that
-          arrived by email is someone else's input, so the click stays yours.
-        </p>
-
         <!-- Shown until an OAuth client ID is pasted into manifest.json. -->
         <div class="card" id="gmailSetup" hidden>
           <h2>Not set up yet</h2>
-          <p>
-            This needs a Google OAuth client ID of your own. It is bound to this
-            extension's ID, so one cannot be shipped in the repo.
-          </p>
+          <p>Needs your own Google OAuth client ID:</p>
           <ol class="fine steps">
             <li>Google Cloud console → new project → enable the <b>Gmail API</b>.</li>
             <li>OAuth consent screen → <b>External</b> → add your own address as a test user.</li>
@@ -122,10 +92,7 @@
             <li>Paste the client ID into <code>oauth2.client_id</code> in <b>manifest.json</b> and reload the extension.</li>
           </ol>
           <p class="fine">This extension's ID: <b id="gmailExtId"></b></p>
-          <p class="fine">
-            Full steps, including how to pin the ID so it stops changing on every
-            reload, are in the README.
-          </p>
+          <p class="fine">Full steps are in the README.</p>
         </div>
 
         <div id="gmailReady" class="stack" hidden>
@@ -143,7 +110,8 @@
             <button class="ghost" id="gmailDisconnectBtn" hidden>Disconnect</button>
           </div>
 
-          <button class="primary" id="gmailFindBtn" hidden>Find the verification link</button>
+          <button class="primary" id="gmailFindBtn" hidden
+                  title="Finds Workday's activation email in Gmail and shows the link. It is never opened for you.">Find the verification link</button>
           <p class="fine" id="gmailNote" hidden></p>
 
           <div class="card" id="gmailResult" hidden>
@@ -160,10 +128,6 @@
 
       <!-- ---- profile ---- -->
       <div class="panel" data-panel="profile" hidden>
-        <p class="fine">
-          Used on application forms (My Information), not on the signup page. Your
-          email lives with the login, on the Login tab.
-        </p>
         <div class="grid2">
           <label>First name<input type="text" id="firstName" /></label>
           <label>Last name<input type="text" id="lastName" /></label>
@@ -172,6 +136,7 @@
           <label>Phone<input type="tel" id="phone" /></label>
           <label>Extension <span class="opt">optional</span><input type="tel" id="phoneExtension" /></label>
         </div>
+        <label title="For sites that ask without a login. Your Workday login email is on the Login tab.">Email<input type="email" id="email" /></label>
         <label>Address line 1<input type="text" id="address1" /></label>
         <label>Address line 2 <span class="opt">optional</span><input type="text" id="address2" /></label>
         <div class="grid2">
@@ -187,29 +152,21 @@
         <div class="divider">Application answers</div>
         <label>
           How did you hear about us?
-          <input type="text" id="source" placeholder="Career Site" />
+          <input type="text" id="source" placeholder="Career Site"
+                 title="Matched loosely: &quot;Career Site&quot; finds &quot;<Company> Career Site&quot;." />
         </label>
-        <p class="fine">
-          Matched loosely against the dropdown, so "Career Site" finds
-          "&lt;Company&gt; Career Site". Set it to "LinkedIn" or "Indeed" if you
-          prefer. State and Country accept either short or full form.
-        </p>
 
         <label>
-          Companies you've worked for
-          <textarea id="employers" rows="3" placeholder="Google&#10;Acme Corp"></textarea>
+          Companies you've worked for <span class="opt">one per line</span>
+          <textarea id="employers" rows="3" placeholder="Acme Corp&#10;Globex"
+                    title="Answers &quot;Have you ever worked for <Company>?&quot; for each company."></textarea>
         </label>
-        <p class="fine">
-          One per line. This is what answers "Have you ever worked for
-          &lt;Company&gt;?" — <b>correctly per company</b>, because the company
-          asking is checked against this list rather than a remembered answer.
-        </p>
 
 
         <div class="qrow">
           <span class="qlabel">Are you 18 or older?</span>
           <div class="seg" id="over18" role="radiogroup" aria-label="Are you 18 or older?">
-            <button type="button" data-value="" title="Leave blank — you'll answer it">–</button>
+            <button type="button" data-value="" title="Leave blank — answered Yes">–</button>
             <button type="button" data-value="yes">Yes</button>
             <button type="button" data-value="no">No</button>
           </div>
@@ -233,15 +190,18 @@
           </div>
         </div>
 
-        <label>Notice period<input type="text" id="noticePeriod" placeholder="2 weeks" /></label>
+        <div class="grid2">
+          <label>Notice period<input type="text" id="noticePeriod" placeholder="2 weeks" /></label>
+          <label>Earliest start date<input type="date" id="startDate" /></label>
+        </div>
         <label>Expected salary<input type="text" id="expectedSalary" placeholder="$100,000–$120,000, negotiable" /></label>
 
-        <div class="divider">Work authorisation</div>
+        <div class="divider" title="Legal declarations, answered only from what you set here. Criminal history is never automated.">Work authorisation</div>
 
         <div class="qrow">
           <span class="qlabel">Authorized to work?</span>
           <div class="seg" id="workAuthorized" role="radiogroup" aria-label="Authorized to work?">
-            <button type="button" data-value="" title="Leave blank — you'll answer it">–</button>
+            <button type="button" data-value="" title="Leave blank — answered Yes">–</button>
             <button type="button" data-value="yes">Yes</button>
             <button type="button" data-value="no">No</button>
           </div>
@@ -264,99 +224,80 @@
             <button type="button" data-value="no">No</button>
           </div>
         </div>
-        <p class="fine">
-          These are legal declarations, answered from what you set here — never
-          carried over from a previous application. Left on <b>–</b>, work
-          authorization is answered <b>Yes</b>, both sponsorship questions
-          <b>No</b> and 18-or-older <b>Yes</b>. A question that asks about
-          sponsorship "now or in the future" is <b>Yes</b> if either is. Criminal history is never automated. Demographic questions
-          are answered only from the Self-identification section below, and
-          only on Workday's Voluntary Disclosures and Self Identify pages.
-        </p>
+        <div class="qrow">
+          <span class="qlabel">Authorized as</span>
+          <div class="seg" id="workAuthBasis" role="radiogroup" aria-label="Work authorization basis">
+            <button type="button" data-value="" title="Leave blank — read as a visa if you need sponsorship, else the question is left">–</button>
+            <button type="button" data-value="citizen">Citizen</button>
+            <button type="button" data-value="permanentResident" title="Permanent resident (green card)">Green card</button>
+            <button type="button" data-value="visa" title="Visa (F-1, OPT, H-1B…)">Visa</button>
+          </div>
+        </div>
 
         <label>
           Visa status explanation
           <textarea id="visaExplanation" rows="6"
+                    title="Offered on a pill where an application asks you to explain your visa status. Never pasted automatically."
                     placeholder="Your visa status, the work authorization it gives you, and what you would need later…"></textarea>
         </label>
         <div class="row-actions">
           <button class="ghost" id="copyVisaBtn">Copy</button>
           <span class="fine" id="visaCount"></span>
         </div>
-        <p class="fine">
-          For applications that ask you to <b>explain</b> your visa status in
-          prose rather than Yes/No. This question usually appears on a later page
-          of the application, not on My Information — so when the extension spots
-          it, it offers this text on a pill next to the box and you click to
-          insert it. It is never pasted in automatically, and it never overwrites
-          something you already typed. <b>Copy</b> is the fallback for the times
-          the pill doesn't appear.
-        </p>
 
-        <div class="divider">Self-identification</div>
-        <label>Gender
-          <select id="eeoGender">
-            <option value="">Not set — leave it for me</option>
-            <option value="decline">Decline to answer</option>
-            <option value="male">Male</option>
-            <option value="female">Female</option>
-            <option value="nonbinary">Non-binary</option>
-          </select>
-        </label>
-        <label>Race / ethnicity
-          <select id="eeoEthnicity">
-            <option value="">Not set — leave it for me</option>
-            <option value="decline">Decline to answer</option>
-            <option value="asian">Asian</option>
-            <option value="black">Black or African American</option>
-            <option value="white">White</option>
-            <option value="nativeAmerican">American Indian or Alaska Native</option>
-            <option value="pacificIslander">Native Hawaiian or Pacific Islander</option>
-            <option value="twoOrMore">Two or more races</option>
-            <option value="hispanic">Hispanic or Latino</option>
-          </select>
-        </label>
-        <label>Hispanic / Latino
-          <select id="eeoHispanic">
-            <option value="">Not set — leave it for me</option>
-            <option value="decline">Decline to answer</option>
-            <option value="yes">Yes</option>
-            <option value="no">No</option>
-          </select>
-        </label>
-        <label>Veteran status
-          <select id="eeoVeteran">
-            <option value="">Not set — leave it for me</option>
-            <option value="decline">Decline to answer</option>
-            <option value="notVeteran">Not a protected veteran</option>
-            <option value="protectedVeteran">Protected veteran</option>
-          </select>
-        </label>
-        <label>Disability
-          <select id="eeoDisability">
-            <option value="">Not set — leave it for me</option>
-            <option value="decline">Decline to answer</option>
-            <option value="yes">Yes</option>
-            <option value="no">No</option>
-          </select>
-        </label>
-        <p class="fine">
-          Used only on Workday's Voluntary Disclosures and Self Identify pages,
-          and only as you set it here. Never learned from a page.
-        </p>
-
-        <button class="primary" id="saveProfileBtn">Save profile</button>
+        <div class="divider" title="Used only on Voluntary Disclosures and Self Identify pages, as set here. Never learned from a page.">Self-identification</div>
+        <div class="fgrid">
+          <label class="frow"><span class="qlabel">Gender</span>
+            <select id="eeoGender" title="Not set: the question is left for you">
+              <option value="">Not set</option>
+              <option value="decline">Decline to answer</option>
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+              <option value="nonbinary">Non-binary</option>
+            </select>
+          </label>
+          <label class="frow"><span class="qlabel">Race / ethnicity</span>
+            <select id="eeoEthnicity" title="Not set: the question is left for you">
+              <option value="">Not set</option>
+              <option value="decline">Decline to answer</option>
+              <option value="asian">Asian</option>
+              <option value="black">Black or African American</option>
+              <option value="white">White</option>
+              <option value="nativeAmerican">American Indian or Alaska Native</option>
+              <option value="pacificIslander">Native Hawaiian or Pacific Islander</option>
+              <option value="twoOrMore">Two or more races</option>
+              <option value="hispanic">Hispanic or Latino</option>
+            </select>
+          </label>
+          <label class="frow"><span class="qlabel">Hispanic / Latino</span>
+            <select id="eeoHispanic" title="Not set: the question is left for you">
+              <option value="">Not set</option>
+              <option value="decline">Decline to answer</option>
+              <option value="yes">Yes</option>
+              <option value="no">No</option>
+            </select>
+          </label>
+          <label class="frow"><span class="qlabel">Veteran status</span>
+            <select id="eeoVeteran" title="Not set: the question is left for you">
+              <option value="">Not set</option>
+              <option value="decline">Decline to answer</option>
+              <option value="notVeteran">Not a protected veteran</option>
+              <option value="protectedVeteran">Protected veteran</option>
+            </select>
+          </label>
+          <label class="frow"><span class="qlabel">Disability</span>
+            <select id="eeoDisability" title="Not set: the question is left for you">
+              <option value="">Not set</option>
+              <option value="decline">Decline to answer</option>
+              <option value="yes">Yes</option>
+              <option value="no">No</option>
+            </select>
+          </label>
+        </div>
       </div>
 
       <!-- ---- experience (My Experience page) ---- -->
       <div class="panel" data-panel="experience" hidden>
-        <p class="fine">
-          Used on the <b>My Experience</b> page, where the widget has one button
-          per section. Each makes its own section match what is saved here,
-          replacing pre-filled values that differ. Next is clicked only by the
-          widget's Submit.
-        </p>
-
         <div class="divider">Education</div>
         <!-- Two fixed slots: Education 1 and Education 2 on the page. -->
         <div class="card edu" data-edu="0">
@@ -399,66 +340,23 @@
             </div>
           </div>
         </div>
-        <p class="fine">
-          Every company words these lists differently, so Degree and Field of
-          study take a <b>ladder</b>: the answers you would accept, best first.
-          The first one that is on the company's list is picked — word for word
-          before anything looser — and if none is, the field is left for you.
-          Dates: <b>2019</b> or <b>08/2019</b>.
-        </p>
 
         <div class="divider">Languages</div>
         <div id="langList" class="stack"></div>
         <button class="ghost" id="addLangBtn" type="button">+ Add language</button>
-        <p class="fine">
-          Levels are matched to each company's own scale — "Fluent" picks the
-          top of whatever it offers, whether that is "5 - Fluent" or "Native or
-          bilingual". A scale the extension can't read is left for you. Fluent or
-          Native overall also ticks "I am fluent in this language".
-        </p>
 
         <div class="divider">Skills</div>
         <label>
           Skills <span class="opt">one per line</span>
-          <textarea id="skills" rows="4" placeholder="Python&#10;SQL"></textarea>
+          <textarea id="skills" rows="4" placeholder="Python&#10;SQL"
+                    title="Added alongside the ones Workday suggests. A skill not on the company's list is skipped."></textarea>
         </label>
-        <p class="fine">
-          Added alongside the ones Workday suggests from your résumé; those are
-          never removed. A skill not on the company's list is skipped.
-        </p>
 
         <div class="divider">Websites</div>
         <label>LinkedIn<input type="text" id="web_linkedin" placeholder="linkedin.com/in/…" /></label>
         <label>GitHub<input type="text" id="web_github" placeholder="github.com/…" /></label>
         <label>Portfolio<input type="text" id="web_portfolio" /></label>
         <label>Other<input type="text" id="web_other" /></label>
-
-        <button class="primary" id="saveExperienceBtn">Save experience</button>
-      </div>
-
-      <!-- ---- learned answers ---- -->
-      <div class="panel" data-panel="answers" hidden>
-        <p class="fine">
-          Questions you've answered by hand, reused when the same question comes
-          up again. Stored locally — just the question and your answer, nothing
-          about which company asked it.
-        </p>
-        <p class="fine">
-          Questions naming a specific company are <b>never</b> stored here. "Have
-          you ever worked for X?" is worked out from your employer list instead,
-          so it stays correct company to company.
-        </p>
-        <div class="divider" id="answersLabel">Remembered</div>
-        <div id="answersList" class="list"></div>
-        <button class="danger" id="forgetAllBtn">Forget all answers</button>
-
-        <div class="divider">Per company</div>
-        <p class="fine">
-          "How did you hear about us?" is worded differently at every company,
-          so whatever you submit there is remembered for that company's site
-          and picked first next time.
-        </p>
-        <div id="picksList" class="list"></div>
       </div>
 
       <!-- ---- settings ---- -->
@@ -480,32 +378,21 @@
         </label>
 
         <div class="divider">Backup</div>
-        <p class="fine">
-          Save your profile, experience, remembered answers and per-company picks
-          to a file, and load them back after reinstalling. Saved <b>passwords
-          are not included</b> — re-enter your login on the Login tab.
-        </p>
         <div class="row-actions start">
-          <button class="ghost" id="exportBtn" type="button">Export to file</button>
+          <button class="ghost" id="exportBtn" type="button"
+                  title="Profile, experience, answers and picks — not passwords. The file is plain text; keep it private.">Export to file</button>
           <button class="ghost" id="importBtn" type="button">Import from file</button>
           <input type="file" id="importFile" accept="application/json,.json" hidden />
         </div>
-        <p class="fine">
-          The file holds your personal details in plain text. Keep it somewhere
-          private — <b>not</b> inside the extension's folder, where it could end
-          up in git.
-        </p>
+        <p class="fine" id="importHint" hidden>Choose your backup file to import.</p>
+        <div class="import-confirm" id="importConfirm" hidden>
+          <p>Replace your profile and experience with this file? Saved logins are kept.</p>
+          <div class="row-actions start">
+            <button class="danger" id="importReplace" type="button">Replace</button>
+            <button class="ghost" id="importCancel" type="button">Cancel</button>
+          </div>
+        </div>
 
-        <div class="divider">About the passphrase</div>
-        <p class="fine">
-          Saved passwords are encrypted with AES-GCM; the key is derived from your
-          passphrase and held in memory only, so it disappears when Chrome closes.
-          It is asked for only where the password is filled — Sign In and Create
-          Account. Your profile details are stored in plain text, so everything
-          else fills without it. CAPTCHAs are never
-          automated, and a verification link found in Gmail is shown to you,
-          never opened.
-        </p>
 
         <div class="divider danger-label">Danger</div>
         <button class="danger" id="wipeBtn">Erase everything</button>
@@ -513,6 +400,7 @@
     </section>
 
     <div id="toast" class="toast" hidden></div>
+    <div id="saveStatus" class="save-status" role="status" aria-live="polite"></div>
 
     <script src="popup.js"></script>
   </body>

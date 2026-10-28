@@ -1,13 +1,14 @@
 {
   "manifest_version": 3,
   "name": "Autocomplete — Job Application Autofill",
-  "version": "1.0.0",
-  "description": "One-click autofill + submit for Workday account creation and application forms.",
+  "version": "1.1.0",
+  "description": "One-click autofill + submit for Workday and Ashby account creation and application forms.",
 
   "permissions": ["storage", "identity"],
 
   "host_permissions": [
     "https://*.myworkdayjobs.com/*",
+    "https://jobs.ashbyhq.com/*",
     "https://gmail.googleapis.com/*"
   ],
 
@@ -40,7 +41,7 @@
 
   "content_scripts": [
     {
-      "matches": ["https://*.myworkdayjobs.com/*"],
+      "matches": ["https://*.myworkdayjobs.com/*", "https://jobs.ashbyhq.com/*"],
       "run_at": "document_idle",
       "all_frames": false,
       "js": [
@@ -56,6 +57,7 @@
         "sites/workday.js",
         "sites/workday-experience.js",
         "sites/workday-questions.js",
+        "sites/ashby.js",
         "sites/index.js",
         "content/registry.js",
         "content/widget.js",

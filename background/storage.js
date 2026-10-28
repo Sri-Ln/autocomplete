@@ -22,14 +22,15 @@ const SK_KEY = 'af_session_key'; // raw AES key, base64, memory only
 
 /**
  * Profile = the non-secret stuff that is identical on every site.
- * NOTE: `email` is NOT here. Email is half of a login credential, so it lives in
- * the vault next to its password. One source of truth. The myInformation page
- * pulls the email from whichever credential matched.
+ * NOTE: the login email lives in the vault next to its password, and the
+ * myInformation page pulls it from whichever credential matched. `email` here is
+ * only for sites that ask for it without a login.
  */
 export const EMPTY_PROFILE = {
   firstName: '',
   lastName: '',
   phone: '',
+  email: '', // used where a site asks for email without a login — the vault login stays Workday's
   phoneExtension: '', // digits only; left empty on most applications
   address1: '',
   address2: '', // apt / unit — not present on every tenant's form
@@ -64,9 +65,14 @@ export const EMPTY_PROFILE = {
   workAuthorized: '',
   needsSponsorshipNow: '',    // sponsorship needed to commence employment
   needsSponsorshipFuture: '', // sponsorship needed in the future
+  /* How you are authorized: 'citizen' | 'permanentResident' | 'visa' | '' .
+   * Only used to pick among several "Yes - I have US work authorization…"
+   * rows; when empty, needing sponsorship (now or later) is read as a visa. */
+  workAuthBasis: '',
   willingToRelocate: '',
   willingToTravel: '',
   noticePeriod: '',
+  startDate: '', // YYYY-MM-DD, for date-picker start questions
 
   /* One answer to "What is your expected salary?", used as written. */
   expectedSalary: '',

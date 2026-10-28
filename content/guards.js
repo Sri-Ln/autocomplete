@@ -169,12 +169,12 @@ AF.guards = {
       `Not submitting — ${orphans.length} required field(s) still empty: ` +
       `${orphans.join(' · ')}. ` +
       `If these should be filled automatically, harvest their data-automation-id ` +
-      `into sites/workday.js; otherwise fill them by hand and click again.`
+      `into the site adapter in sites/; otherwise fill them by hand and click again.`
     );
   },
 
   /**
-   * Visible validation errors. Workday's own error containers come from the
+   * Visible validation errors. The site's own error containers come from the
    * adapter; the generic ARIA patterns catch the rest.
    */
   validationErrors(adapterErrorSelectors = []) {
@@ -193,14 +193,14 @@ AF.guards = {
       : 'Not submitting — the form is showing a validation error.';
   },
 
-  /** A disabled submit button means Workday isn't satisfied yet. */
+  /** A disabled submit button means the site isn't satisfied yet. */
   submitReady(submitSelector) {
     if (AF.isPlaceholder(submitSelector)) {
-      return 'Submit selector is still a placeholder — nothing to click. See sites/workday.js.';
+      return 'Submit selector is still a placeholder — nothing to click. See the site adapter in sites/.';
     }
 
     const btn = document.querySelector(submitSelector);
-    if (!btn) return 'Submit button not found — check the selector in sites/workday.js.';
+    if (!btn) return 'Submit button not found — check the selector in the site adapter in sites/.';
     if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') {
       return 'Not submitting — the submit button is still disabled.';
     }

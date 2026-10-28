@@ -27,6 +27,9 @@
   --accent-hover: #6a48f5;
   --danger: #ef7d7d;
   --radius: 10px;
+  /* The popup is dark-only; this makes the browser-drawn parts — a select's
+   * open list, the date picker and its icon — dark to match. */
+  color-scheme: dark;
 }
 
 html,
@@ -151,9 +154,11 @@ label {
 }
 
 textarea,
+select,
 input[type="text"],
 input[type="email"],
 input[type="tel"],
+input[type="date"],
 input[type="password"] {
   display: block;
   width: 100%;
@@ -166,15 +171,81 @@ input[type="password"] {
   font-size: 13px;
   font-family: inherit;
 }
+/* One height for every single-line control, so a select or a date sits level
+ * with the text box beside it. */
+select,
+input:not([type="checkbox"]) {
+  height: 36px;
+  line-height: 18px;
+}
 input::placeholder,
 textarea::placeholder {
   color: #55556a;
 }
 input:focus,
-textarea:focus {
+textarea:focus,
+select:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(124, 92, 255, 0.15);
+}
+
+/* Native <select> and date input, kept native for the keyboard and screen
+ * readers, drawn like the text boxes: no OS bevel, our own chevron. The open
+ * option list still comes from the OS; color-scheme above makes it dark. */
+select,
+input[type="date"] {
+  appearance: none;
+  cursor: pointer;
+}
+select {
+  padding-right: 30px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5l3 3 3-3' fill='none' stroke='%237a7a8c' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 12px;
+  text-overflow: ellipsis;
+}
+select:hover,
+input[type="date"]:hover {
+  border-color: var(--line-bright);
+}
+select:focus,
+input[type="date"]:focus {
+  border-color: var(--accent);
+}
+select option {
+  background: var(--bg-raised);
+  color: var(--text);
+}
+input[type="date"]::-webkit-calendar-picker-indicator {
+  margin-left: 4px;
+  opacity: 0.55;
+  cursor: pointer;
+}
+input[type="date"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 0.9;
+}
+/* An empty date reads as a placeholder, not as a value. */
+input[type="date"].empty::-webkit-datetime-edit {
+  color: #55556a;
+}
+
+/* A label beside its control, for the Self-identification selects: the same
+ * left-label, right-control line as the Yes/No rows (.qrow) above them. */
+.fgrid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+label.frow {
+  display: grid;
+  grid-template-columns: 104px 1fr;
+  align-items: center;
+  gap: 10px;
+}
+label.frow select {
+  margin-top: 0;
 }
 textarea {
   resize: vertical;
@@ -517,6 +588,39 @@ code {
   color: #f09a9a;
 }
 
+/* The autosave status: a small pill in the corner that fades, rather than a
+ * toast per keystroke-pause. Opacity, not [hidden], so it can fade. */
+.save-status {
+  position: fixed;
+  right: 14px;
+  bottom: 14px;
+  max-width: calc(100% - 28px);
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  background: #16281f;
+  color: #7fd6a6;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.18s, transform 0.18s;
+  pointer-events: none;
+}
+.save-status.show {
+  opacity: 1;
+  transform: none;
+}
+.save-status.err {
+  background: #2b1717;
+  color: #f09a9a;
+}
+
+/* A box the autosave skipped because the browser rejects its value. */
+input.invalid,
+input.invalid:focus {
+  border-color: var(--danger);
+}
+
 /* ── experience tab ──────────────────────────────────────────────────
  * Education cards and language cards. Both reuse .card and .stack; .tight
  * closes the gap inside a card so one entry reads as one block, and .grid3 is
@@ -593,6 +697,20 @@ details.per-skill[open] summary {
   margin-top: 0;
 }
 
+/* The import confirmation, in the page because window.confirm freezes the
+ * toolbar popup. Same raised-panel look as a card, with a danger edge. */
+.import-confirm {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+  background: var(--bg-raised);
+}
+.import-confirm p {
+  margin: 0 0 8px;
+  font-size: 12px;
+}
+
 /* ── quick copy ── */
 
 .quick {
@@ -600,16 +718,18 @@ details.per-skill[open] summary {
   flex-direction: column;
   gap: 7px;
 }
+/* All five chips — four links and Visa — fit one line at popup width;
+ * wrap is only the fallback for something narrower. */
 .chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 5px;
 }
 .chips:empty {
   display: none;
 }
 button.chip {
-  padding: 5px 11px;
+  padding: 5px 8px;
   border: 1px solid var(--line-bright);
   border-radius: 999px;
   background: var(--bg-raised);

@@ -244,3 +244,39 @@ AF.summarize = function (report) {
   if (report.skipped.length) parts.push(`${report.skipped.length} not configured`);
   return parts.join(' · ');
 };
+
+/**
+ * One line for the widget, for every site.
+ *   "Education: 4 filled, 2 already there, 1 entry added. Left for you: …"
+ * `kept` — values already on the form that differ from the profile — are
+ * named, because "we left your school alone" is something to check.
+ */
+AF.describeReport = function (report) {
+  if (report.note && !report.filled.length && !report.already.length) {
+    return { kind: 'info', text: `${report.section}: ${report.note}` };
+  }
+  // The itemised report goes to the console, never the widget.
+  AF.log(`${report.section} report`, report);
+
+  const parts = [
+    report.filled.length && `${report.filled.length} filled`,
+    report.replaced.length && `${report.replaced.length} replaced`,
+    report.already.length && `${report.already.length} already set`,
+    report.added && `${report.added} ${report.added === 1 ? 'entry' : 'entries'} added`,
+    report.signed?.length && `${report.signed.length} signed`,
+  ].filter(Boolean);
+  let text = `${report.section}: ${parts.join(', ') || 'nothing to do'}.`;
+
+  // What still needs the user: a count only — a clipped list could not say
+  // which question it meant. A site that outlines them on the page says so.
+  const todo = [...report.failed, ...report.left, ...report.kept];
+  if (todo.length) {
+    text += ` ${todo.length} need${todo.length === 1 ? 's' : ''} you${report.marked ? ' — outlined on the page' : ''}.`;
+  }
+  // Languages this employer's list does not offer — said, never asked of the user.
+  const gone = report.unavailable ?? [];
+  if (gone.length) text += ` ${gone.join(', ')} not in list.`;
+
+  const kind = report.failed.length ? 'err' : todo.length ? 'warn' : 'ok';
+  return { kind, text };
+};
