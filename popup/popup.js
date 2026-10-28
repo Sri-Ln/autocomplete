@@ -229,7 +229,7 @@ function paintQuick(profile) {
     if (url) chips.push([label, url, url]);
   }
   const visa = profile.visaExplanation?.trim();
-  if (visa) chips.push(['Visa explanation', visa, `${visa.length} characters`]);
+  if (visa) chips.push(['Visa', visa, `Visa explanation · ${visa.length} characters`]);
 
   $('quickChips').replaceChildren(...chips.map(([label, text, title]) => {
     const b = document.createElement('button');

@@ -718,16 +718,18 @@ details.per-skill[open] summary {
   flex-direction: column;
   gap: 7px;
 }
+/* All five chips — four links and Visa — fit one line at popup width;
+ * wrap is only the fallback for something narrower. */
 .chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 5px;
 }
 .chips:empty {
   display: none;
 }
 button.chip {
-  padding: 5px 11px;
+  padding: 5px 8px;
   border: 1px solid var(--line-bright);
   border-radius: 999px;
   background: var(--bg-raised);

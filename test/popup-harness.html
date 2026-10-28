@@ -329,7 +329,7 @@
           [['Widget Design', 'Gadgetry'], { linkedin: 'linkedin.example/in/testy', github: 'github.example/testy', portfolio: '', other: '' }]);
         check('without touching the Profile tab', [p.firstName, p.visaExplanation], ['Ada', VISA]);
         check('and the Quick copy chips follow', [...$('quickChips').children].map((b) => b.textContent),
-          ['LinkedIn', 'GitHub', 'Visa explanation']);
+          ['LinkedIn', 'GitHub', 'Visa']);
 
         $('addLangBtn').click();
         fire([...$('langList').querySelectorAll('.card.lang')].at(-1).querySelector('[data-k="language"]'), 'Klingon');
@@ -435,6 +435,20 @@
         $('importReplace').click();
         await sleep(100); await settle();
         check('Replace applies the backup', [stored().firstName, $('importConfirm').hidden], ['Ada', true]);
+
+        /* ---- 9b. every Quick copy chip fits one line at popup width ---- */
+
+        await S.setProfile({ ...(await S.getProfile()), visaExplanation: VISA, websites: {
+          linkedin: 'linkedin.example/in/testy', github: 'github.example/testy',
+          portfolio: 'portfolio.example.com', other: 'testy.example.com' } });
+        await window.__afBoot();
+        const hostStyle = host.getAttribute('style');
+        host.style.width = host.style.maxWidth = '332px'; // the popup's 330px body + this frame's border
+        const chipTops = [...$('quickChips').children].map((b) => b.offsetTop);
+        check('five chips, the visa one labelled just Visa', [...$('quickChips').children].map((b) => b.textContent),
+          ['LinkedIn', 'GitHub', 'Portfolio', 'Website', 'Visa']);
+        check('all on one line', new Set(chipTops).size, 1);
+        if (hostStyle === null) host.removeAttribute('style'); else host.setAttribute('style', hostStyle);
 
         /* ---- 10. Erase everything erases the answers and picks too ---- */
 
