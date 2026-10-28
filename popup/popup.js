@@ -242,7 +242,8 @@ function paintQuick(profile) {
   }));
 
   const auth = YES_NO[profile.workAuthorized];
-  const sponsor = YES_NO[profile.needsSponsorship];
+  const asks = [profile.needsSponsorshipNow, profile.needsSponsorshipFuture];
+  const sponsor = YES_NO[asks.includes('yes') ? 'yes' : asks.find(Boolean)];
   $('quickAuth').textContent = chips.length
     ? [auth && `Authorized: ${auth}`, sponsor && `Needs sponsorship: ${sponsor}`]
         .filter(Boolean).join(' · ')
