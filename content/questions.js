@@ -762,6 +762,10 @@ function extractAffiliates(text) {
     .filter((s) => /^[A-Z0-9]/.test(s) && s.split(/\s+/).length <= 4);
 }
 
+/* "How / where did you hear about us", "…find out about this job", "…learn
+ * about this role". Needs "about", so "Where did you learn Python?" is not one. */
+const HEARD_ABOUT = /\b(how|where) did you (first )?(hear|find out|learn|come across|discover)\b.{0,10}\babout\b|\b(how|where) did you (first )?(find|come across|discover) (us|this (job|role|position|opportunity|posting))\b/i;
+
 /**
  * Decide how to answer one question.
  *
@@ -773,7 +777,7 @@ function extractAffiliates(text) {
  * @returns {
  *   answer:  string|null,
  *   source:  'self-id' | 'sign-off' | 'sensitive' | 'follow-up' | 'derived'
- *            | 'preference' | 'recalled' | 'none',
+ *            | 'preference' | 'recalled' | 'default' | 'none',
  *   rule:    string|null,
  *   reason:  string      — shown to the user, always populated
  * }
@@ -848,6 +852,17 @@ AF.questions.resolve = function (text, ctx = {}) {
       return { answer: learned[hit.text].answer, source: 'recalled', rule: null,
                reason: `you answered this before (${learned[hit.text].seen ?? 1}×)` };
     }
+  }
+  /* "How did you hear about us?" asked among a company's own questions. Not a
+   * rule: a rule would stop the hand answer being learned, and the one you
+   * picked from this kind of list before ("Careers page") beats the saved
+   * "Career Site", so it is consulted only after recall. */
+  const source = String(profile.source ?? '').trim();
+  if (source && HEARD_ABOUT.test(question)) {
+    /* 'default', not 'preference': the drivers let a preference replace what a
+     * field already holds, and this one only fills a blank. */
+    return { answer: source, source: 'default', rule: 'source',
+             reason: 'your "How did you hear about us?" answer' };
   }
   return { answer: null, source: 'none', rule: null, reason: 'not seen before' };
 };

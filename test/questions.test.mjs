@@ -693,6 +693,32 @@ check('professional discipline: never a text answer',
 check('a certification you hold is not a sign-off',
   AF.questions.resolve('Do you hold an AWS certification?', { profile: {}, learned: {}, widget: 'yesno' }).source === 'sign-off', false);
 
+/* ---- "How did you hear about us?" on a question page -> profile.source ---- */
+/* My Information has its own picker for this; a company asking it among its own
+ * questions used to be answered only by recall. */
+const SOURCE = { source: 'Career Site' };
+for (const q of ['How did you hear about us?', 'How did you hear about this position?',
+  'Where did you hear about this opportunity?', 'How did you find out about this job?',
+  'How did you learn about this role?']) {
+  const r = AF.questions.resolve(q, { profile: SOURCE, learned: {}, widget: 'listbox' });
+  check(`how did you hear: "${q}" -> profile.source`, [r.answer, r.source, r.rule], ['Career Site', 'default', 'source']);
+}
+{
+  const HEAR = 'How did you hear about us?';
+  const { learned } = AF.questions.remember({}, HEAR, 'Careers page', { widget: 'choice' });
+  check('how did you hear: still learned from a hand answer', Object.keys(learned).length, 1);
+  const r = AF.questions.resolve(HEAR, { profile: SOURCE, learned, widget: 'choice' });
+  check('how did you hear: a past hand answer wins over profile.source', [r.answer, r.source], ['Careers page', 'recalled']);
+  check('how did you hear: no saved source -> left',
+    AF.questions.resolve(HEAR, { profile: {}, learned: {}, widget: 'listbox' }).answer, null);
+}
+check('how did you hear: "Career Site" never lands on "Career Fair"',
+  pick(['LinkedIn', 'Career Fair', 'Indeed', 'Other'], { answer: 'Career Site', source: 'default' }), -1);
+check('how did you hear: "Career Site" finds "Career Site / Careers Page"',
+  pick(['LinkedIn', 'Career Site / Careers Page', 'Indeed'], { answer: 'Career Site', source: 'default' }), 1);
+check('learning a Python course is not a source question',
+  AF.questions.resolve('Where did you learn Python?', { profile: SOURCE, learned: {}, widget: 'text' }).rule === 'source', false);
+
 /* Real sign-offs are still ticked. */
 for (const q of ['I hereby certify that the information provided is true and complete.',
   'By checking this box, I certify that all statements made in this application are correct.',
