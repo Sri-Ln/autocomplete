@@ -679,5 +679,27 @@ check('embargoed country: never a text answer',
 check('a country alone is not the screening question',
   AF.questions.resolve('Would you be willing to travel to Cuba?', { profile: {}, learned: {}, widget: 'yesno' }).rule === 'embargoedCountry', false);
 
+/* ---- Discipline on a professional licence -> No, never a sign-off ---- */
+/* "certification" the noun once made this a sign-off, ticked Yes. */
+const DISCIPLINE = 'Have you ever had, or do you anticipate receiving, any disciplinary action taken on your professional license, certification, or credentials? (Including, but not limited to fines, citations, penalties, reprimands, reprovals, probation, practice restrictions, revocation, surrender, and suspension).  Please disclose all actions on any of your professional licenses/certifications/credentials to avoid delays in processing your application.*';
+for (const widget of ['yesno', 'choice', 'listbox']) {
+  const r = AF.questions.resolve(DISCIPLINE, { profile: {}, learned: {}, widget });
+  check(`professional discipline (${widget}) -> No`, [r.answer, r.rule], ['No', 'professionalDiscipline']);
+}
+check('a revoked certification -> No',
+  AF.questions.resolve('Has any professional certification you hold ever been suspended or revoked?', { profile: {}, learned: {}, widget: 'yesno' }).answer, 'No');
+check('professional discipline: never a text answer',
+  AF.questions.resolve(DISCIPLINE, { profile: {}, learned: {}, widget: 'text' }).rule === 'professionalDiscipline', false);
+check('a certification you hold is not a sign-off',
+  AF.questions.resolve('Do you hold an AWS certification?', { profile: {}, learned: {}, widget: 'yesno' }).source === 'sign-off', false);
+
+/* Real sign-offs are still ticked. */
+for (const q of ['I hereby certify that the information provided is true and complete.',
+  'By checking this box, I certify that all statements made in this application are correct.',
+  'Certification', 'Applicant Certification']) {
+  const r = CB(q);
+  check(`sign-off still ticked: "${q}"`, [r.answer, r.source], ['Yes', 'sign-off']);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);
