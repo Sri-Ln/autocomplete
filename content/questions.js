@@ -258,6 +258,19 @@ AF.questions.DERIVED = [
   },
 
   {
+    /* Discipline on a professional licence: "Have you ever had, or do you
+     * anticipate receiving, any disciplinary action taken on your professional
+     * license, certification, or credentials? (… probation, revocation,
+     * surrender, and suspension)" — No (the user's rule, 2026-10-28). Needs a
+     * discipline word, so "Do you hold a PMP certification?" is left alone. */
+    id: 'professionalDiscipline',
+    yesNo: true,
+    test: /disciplinary (actions?|proceedings?|measures?)|\b(licen[cs]es?|certifications?|credentials?)\b.{0,80}\b(suspen(ded|sion)|revo(ked|cation)|restrict(ed|ion)|probation|sanction(ed|s)?|surrender(ed)?|reprimand(ed|s)?)\b|\b(suspen(ded|sion)|revo(ked|cation)|probation|sanction(ed|s)?|surrender(ed)?|reprimand(ed|s)?)\b.{0,80}\b(licen[cs]es?|certifications?|credentials?)\b/i,
+    resolve: () => 'No',
+    explain: () => 'defaults to No',
+  },
+
+  {
     id: 'over18',
     test: /\b(18 years|eighteen|at least 18|over 18|age of 18|legal working age)\b/i,
     requires: 'over18',
@@ -430,8 +443,11 @@ AF.questions.SIGN_OFFS = [
   /* A tick, or — on tenants that ask it as a dropdown — the Yes / I Agree row. */
   { id: 'consent', widget: ['checkbox', 'listbox', 'choice'],
     /* An opt-in is not a sign-off — it is still a Yes, from the consent rule
-     * in DERIVED, but it is not reported as "signed". */
-    test: (q) => /terms and conditions|\bi (have read|agree|acknowledge|certify|consent|attest|understand|verify|confirm|affirm)\b|electronic(ally)? sign|\bcertif|truthful|true and (accurate|correct|complete)|accurate and complete/i.test(q) &&
+     * in DERIVED, but it is not reported as "signed". The verb "certify", or
+     * a label that is only "Certification" — never the noun mid-sentence:
+     * "discipline on your licence or certification" is a question, not a
+     * sign-off. */
+    test: (q) => /terms and conditions|\bi (have read|agree|acknowledge|certify|consent|attest|understand|verify|confirm|affirm)\b|electronic(ally)? sign|\bcertify\b|^\s*(applicant(['’]s)? |candidate )?certification\s*[:*]*\s*$|truthful|true and (accurate|correct|complete)|accurate and complete/i.test(q) &&
       !/marketing|promotional|newsletter|text messages|\bsms\b|opt.?in|subscribe/i.test(q),
     resolve: () => 'Yes', explain: () => 'ticked for you as a sign-off' },
   { id: 'signatureName', widget: 'text',
